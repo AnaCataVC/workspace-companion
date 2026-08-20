@@ -3,6 +3,7 @@ name = "workspace-companion"
 version = "0.1.0"
 description = "System Tray & Floating Companion for Git Worktrees and GitHub CLI"
 authors = ["Ana Catalina"]
+license = "MIT"
 edition = "2021"
 
 [build-dependencies]
