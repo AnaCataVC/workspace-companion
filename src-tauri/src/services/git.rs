@@ -33,6 +33,62 @@ pub struct WorktreeEntry {
     pub last_commit_date: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorInfo {
+    pub id: String,
+    pub name: String,
+    pub is_available: bool,
+    pub icon_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchEntry {
+    pub name: String,
+    pub short_name: String,
+    pub is_remote: bool,
+    pub is_current: bool,
+    pub is_locked_by_other: bool,
+    pub locked_worktree_path: Option<String>,
+    pub last_commit_sha: Option<String>,
+    pub last_commit_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeBranchesResponse {
+    pub repo_path: String,
+    pub worktree_path: String,
+    pub current_branch: Option<String>,
+    pub branches: Vec<BranchEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckoutBranchResult {
+    pub success: bool,
+    pub new_branch: String,
+    pub head_sha: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestWorktreePathResult {
+    pub suggested_path: String,
+    pub already_exists: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateWorktreeResult {
+    pub success: bool,
+    pub worktree_path: String,
+    pub branch_name: String,
+    pub message: String,
+}
+
 pub struct GitService;
 
 impl GitService {
@@ -225,6 +281,399 @@ impl GitService {
         }
         None
     }
+
+    /// Launches the selected IDE, editor, or terminal targeting the given path.
+    pub fn open_in_editor(editor: &str, path: &str) -> Result<(), String> {
+        let p = Path::new(path);
+        if !p.exists() {
+            return Err(format!("Target path does not exist: {}", path));
+        }
+
+        match editor {
+            "explorer" => {
+                open::that(path).map_err(|e| format!("Failed to open Explorer: {}", e))?;
+                Ok(())
+            }
+            "wt" => {
+                #[cfg(target_os = "windows")]
+                {
+                    let mut cmd = Command::new("wt");
+                    cmd.args(&["-d", path]);
+                    cmd.creation_flags(CREATE_NO_WINDOW);
+                    cmd.spawn().map_err(|e| format!("Failed to launch Windows Terminal: {}. Ensure wt is available.", e))?;
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    Command::new("wt").args(&["-d", path]).spawn().map_err(|e| e.to_string())?;
+                }
+                Ok(())
+            }
+            "antigravity" | "agy" => {
+                if Self::is_bin_available("antigravity") {
+                    Self::launch_detached_editor("antigravity", path)
+                } else if Self::is_bin_available("agy") {
+                    Self::launch_detached_editor("agy", path)
+                } else if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+                    let candidate1 = Path::new(&local_app_data)
+                        .join("Programs")
+                        .join("Antigravity")
+                        .join("Antigravity.exe");
+                    let candidate2 = Path::new(&local_app_data)
+                        .join("Programs")
+                        .join("Antigravity IDE")
+                        .join("Antigravity.exe");
+                    if candidate1.exists() {
+                        Self::launch_detached_editor(&candidate1.to_string_lossy(), path)
+                    } else if candidate2.exists() {
+                        Self::launch_detached_editor(&candidate2.to_string_lossy(), path)
+                    } else {
+                        Err("Antigravity executable not found. Ensure Antigravity IDE is installed.".into())
+                    }
+                } else {
+                    Err("Antigravity executable not found.".into())
+                }
+            }
+            "vscode" | "code" => Self::launch_detached_editor("code", path),
+            "cursor" => Self::launch_detached_editor("cursor", path),
+            "windsurf" => Self::launch_detached_editor("windsurf", path),
+            unknown => Err(format!("Unsupported editor identifier: {}", unknown)),
+        }
+    }
+
+    fn launch_detached_editor(bin: &str, path: &str) -> Result<(), String> {
+        #[cfg(target_os = "windows")]
+        {
+            let mut cmd = Command::new("cmd");
+            cmd.args(&["/C", "start", "", bin, path]);
+            cmd.creation_flags(CREATE_NO_WINDOW);
+            cmd.spawn().map_err(|e| format!("Failed to launch {}: {}", bin, e))?;
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            Command::new(bin).arg(path).spawn().map_err(|e| format!("Failed to launch {}: {}", bin, e))?;
+        }
+        Ok(())
+    }
+
+    /// Checks if a binary command exists in the system PATH.
+    pub fn is_bin_available(bin: &str) -> bool {
+        #[cfg(target_os = "windows")]
+        {
+            let mut cmd = Command::new("where");
+            cmd.arg(bin);
+            cmd.creation_flags(CREATE_NO_WINDOW);
+            cmd.output().map(|o| o.status.success()).unwrap_or(false)
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            Command::new("which")
+                .arg(bin)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        }
+    }
+
+    /// Detects installed editors by probing executables and standard installation paths silently.
+    pub fn detect_installed_editors() -> Vec<EditorInfo> {
+        let editors = vec![
+            ("antigravity", "Antigravity", "antigravity", "sparkles"),
+            ("vscode", "VS Code", "code", "code"),
+            ("cursor", "Cursor", "cursor", "sparkles"),
+            ("windsurf", "Windsurf", "windsurf", "wind"),
+            ("wt", "Windows Terminal", "wt", "terminal"),
+            ("explorer", "File Explorer", "explorer", "folder"),
+        ];
+
+        editors
+            .into_iter()
+            .map(|(id, name, bin, icon)| {
+                let available = if id == "explorer" {
+                    true
+                } else if id == "antigravity" {
+                    Self::is_bin_available("antigravity")
+                        || Self::is_bin_available("agy")
+                        || std::env::var("LOCALAPPDATA")
+                            .map(|la| {
+                                Path::new(&la)
+                                    .join("Programs")
+                                    .join("Antigravity")
+                                    .join("Antigravity.exe")
+                                    .exists()
+                                    || Path::new(&la)
+                                        .join("Programs")
+                                        .join("Antigravity IDE")
+                                        .join("Antigravity.exe")
+                                        .exists()
+                            })
+                            .unwrap_or(false)
+                } else if id == "cursor" {
+                    Self::is_bin_available("cursor")
+                        || std::env::var("LOCALAPPDATA")
+                            .map(|la| {
+                                Path::new(&la)
+                                    .join("Programs")
+                                    .join("cursor")
+                                    .join("Cursor.exe")
+                                    .exists()
+                            })
+                            .unwrap_or(false)
+                } else if id == "windsurf" {
+                    Self::is_bin_available("windsurf")
+                        || std::env::var("LOCALAPPDATA")
+                            .map(|la| {
+                                Path::new(&la)
+                                    .join("Programs")
+                                    .join("windsurf")
+                                    .join("Windsurf.exe")
+                                    .exists()
+                            })
+                            .unwrap_or(false)
+                } else {
+                    Self::is_bin_available(bin)
+                };
+
+                EditorInfo {
+                    id: id.to_string(),
+                    name: name.to_string(),
+                    is_available: available,
+                    icon_name: icon.to_string(),
+                }
+            })
+            .collect()
+    }
+
+    /// Lists all local and remote branches for a repository, marking locks from sibling worktrees.
+    pub fn list_branches_for_worktree<P: AsRef<Path>>(
+        repo_path: P,
+        worktree_path: &str,
+    ) -> Result<WorktreeBranchesResponse, String> {
+        let repo_root = repo_path.as_ref();
+
+        // 1. Map all checked out branches across worktrees
+        let raw_wt = Self::run_git(repo_root, &["worktree", "list", "--porcelain"])?;
+        let worktrees = Self::parse_worktree_porcelain(&raw_wt);
+
+        let mut branch_to_worktree: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        let mut current_worktree_branch: Option<String> = None;
+
+        for wt in &worktrees {
+            if let Some(b) = &wt.branch {
+                let short_b = b.replace("refs/heads/", "");
+                branch_to_worktree.insert(short_b.clone(), wt.path.clone());
+                if wt.path == worktree_path {
+                    current_worktree_branch = Some(short_b);
+                }
+            }
+        }
+
+        // 2. Query local branches
+        let mut branches = Vec::new();
+        let local_raw = Self::run_git(
+            repo_root,
+            &["branch", "--list", "--format=%(refname:short)|||%(objectname:short)|||%(subject)"],
+        )?;
+
+        for line in local_raw.lines().filter(|l| !l.trim().is_empty()) {
+            let parts: Vec<&str> = line.split("|||").collect();
+            let short_name = parts.get(0).unwrap_or(&"").to_string();
+            let sha = parts.get(1).map(|s| s.to_string());
+            let msg = parts.get(2).map(|s| s.to_string());
+
+            let is_current = current_worktree_branch.as_deref() == Some(&short_name);
+            let locked_by = branch_to_worktree.get(&short_name).cloned();
+            let is_locked = locked_by.is_some() && !is_current;
+
+            branches.push(BranchEntry {
+                name: short_name.clone(),
+                short_name,
+                is_remote: false,
+                is_current,
+                is_locked_by_other: is_locked,
+                locked_worktree_path: if is_locked { locked_by } else { None },
+                last_commit_sha: sha,
+                last_commit_message: msg,
+            });
+        }
+
+        // 3. Query remote branches (excluding origin/HEAD)
+        if let Ok(remote_raw) = Self::run_git(
+            repo_root,
+            &["branch", "-r", "--format=%(refname:short)|||%(objectname:short)|||%(subject)"],
+        ) {
+            for line in remote_raw.lines().filter(|l| !l.trim().is_empty()) {
+                let parts: Vec<&str> = line.split("|||").collect();
+                let full_name = parts.get(0).unwrap_or(&"").to_string();
+                if full_name.contains("/HEAD") {
+                    continue;
+                }
+                let clean_name = full_name
+                    .splitn(2, '/')
+                    .nth(1)
+                    .unwrap_or(&full_name)
+                    .to_string();
+
+                // Only add if not already present in local branches
+                if !branches.iter().any(|b| b.short_name == clean_name) {
+                    let sha = parts.get(1).map(|s| s.to_string());
+                    let msg = parts.get(2).map(|s| s.to_string());
+
+                    branches.push(BranchEntry {
+                        name: full_name,
+                        short_name: clean_name,
+                        is_remote: true,
+                        is_current: false,
+                        is_locked_by_other: false,
+                        locked_worktree_path: None,
+                        last_commit_sha: sha,
+                        last_commit_message: msg,
+                    });
+                }
+            }
+        }
+
+        Ok(WorktreeBranchesResponse {
+            repo_path: repo_root.to_string_lossy().to_string(),
+            worktree_path: worktree_path.to_string(),
+            current_branch: current_worktree_branch,
+            branches,
+        })
+    }
+
+    /// Safely checks out a branch on an existing worktree after pre-flight dirty verification.
+    pub fn checkout_worktree_branch(
+        worktree_path: &str,
+        target_branch: &str,
+    ) -> Result<CheckoutBranchResult, String> {
+        let wt_path = Path::new(worktree_path);
+        if !wt_path.exists() {
+            return Err(format!("Worktree path does not exist: {}", worktree_path));
+        }
+
+        // Pre-flight dirty check
+        let (is_dirty, count) = Self::check_dirty_status(wt_path);
+        if is_dirty {
+            return Err(format!(
+                "Cannot switch branch: {} uncommitted or modified files detected. Please stash or commit changes first.",
+                count
+            ));
+        }
+
+        // Run checkout
+        let checkout_args = if target_branch.starts_with("origin/") {
+            let local_name = target_branch.trim_start_matches("origin/");
+            vec!["checkout", "-B", local_name, "--track", target_branch]
+        } else {
+            vec!["checkout", target_branch]
+        };
+
+        let output = Self::run_git(wt_path, &checkout_args)?;
+
+        // Retrieve new HEAD SHA
+        let head_sha = Self::run_git(wt_path, &["rev-parse", "--short", "HEAD"]).unwrap_or_default();
+
+        Ok(CheckoutBranchResult {
+            success: true,
+            new_branch: target_branch.to_string(),
+            head_sha,
+            message: output,
+        })
+    }
+
+    /// Generates a standardized sibling directory path for a new worktree.
+    pub fn suggest_worktree_path<P: AsRef<Path>>(
+        repo_path: P,
+        branch_name: &str,
+    ) -> Result<SuggestWorktreePathResult, String> {
+        let repo_dir = repo_path.as_ref();
+        let parent_dir = repo_dir.parent().ok_or("Cannot determine parent directory")?;
+        let repo_name = repo_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("repo");
+
+        // Sanitize branch name: replace invalid path characters
+        let sanitized_branch = branch_name
+            .trim()
+            .replace("refs/heads/", "")
+            .replace("origin/", "")
+            .replace('/', "-")
+            .replace('\\', "-")
+            .replace(':', "-")
+            .replace(' ', "-");
+
+        let base_name = if sanitized_branch.is_empty() {
+            format!("{}-worktree", repo_name)
+        } else {
+            format!("{}-{}", repo_name, sanitized_branch)
+        };
+
+        let mut candidate = parent_dir.join(&base_name);
+        let mut index = 1;
+
+        while candidate.exists() {
+            candidate = parent_dir.join(format!("{}-{}", base_name, index));
+            index += 1;
+        }
+
+        Ok(SuggestWorktreePathResult {
+            suggested_path: candidate.to_string_lossy().to_string(),
+            already_exists: candidate.exists(),
+        })
+    }
+
+    /// Creates a new worktree with either a new branch or an existing branch.
+    pub fn create_worktree<P: AsRef<Path>>(
+        repo_path: P,
+        target_path: &str,
+        base_branch: &str,
+        new_branch_name: Option<&str>,
+    ) -> Result<CreateWorktreeResult, String> {
+        let repo_root = repo_path.as_ref();
+        let target_dir = Path::new(target_path);
+
+        if target_dir.exists() {
+            if let Ok(mut entries) = std::fs::read_dir(target_dir) {
+                if entries.next().is_some() {
+                    return Err(format!(
+                        "Target path '{}' already exists and is not empty.",
+                        target_path
+                    ));
+                }
+            }
+        }
+
+        let branch_created = if let Some(new_branch) = new_branch_name {
+            let clean_new_branch = new_branch.trim();
+            if clean_new_branch.is_empty() {
+                return Err("New branch name cannot be empty".to_string());
+            }
+
+            // Validate ref format
+            Self::run_git(repo_root, &["check-ref-format", "--branch", clean_new_branch])
+                .map_err(|_| format!("Invalid branch name format: '{}'", clean_new_branch))?;
+
+            // Execute: git worktree add <target_path> -b <new_branch> <base_branch>
+            Self::run_git(
+                repo_root,
+                &["worktree", "add", target_path, "-b", clean_new_branch, base_branch],
+            )?;
+            clean_new_branch.to_string()
+        } else {
+            // Checkout existing branch
+            // Execute: git worktree add <target_path> <base_branch>
+            Self::run_git(repo_root, &["worktree", "add", target_path, base_branch])?;
+            base_branch.to_string()
+        };
+
+        Ok(CreateWorktreeResult {
+            success: true,
+            worktree_path: target_path.to_string(),
+            branch_name: branch_created,
+            message: format!("Successfully created worktree at '{}'", target_path),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -261,6 +710,12 @@ bare
 
         assert_eq!(entries[2].path, "C:/Repos/my-project-bare");
         assert!(entries[2].bare);
+    }
+
+    #[test]
+    fn test_suggest_worktree_path_sanitization() {
+        let res = GitService::suggest_worktree_path("C:/Repos/app", "feat/cool-feature").unwrap();
+        assert!(res.suggested_path.contains("app-feat-cool-feature"));
     }
 }
 

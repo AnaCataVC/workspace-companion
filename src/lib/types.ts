@@ -17,7 +17,24 @@ export interface WorktreeInfo {
 export interface RepositoryWorktrees {
   repoPath: string;
   repoName: string;
+  associatedAccount?: string | null;
+  watchFolderPath?: string | null;
   worktrees: WorktreeInfo[];
+}
+
+export interface WatchFolder {
+  id: string;
+  path: string;
+  accountUsername: string | null;
+  enabled: boolean;
+  maxDepth: number; // 1 to 5
+}
+
+export interface AppConfig {
+  version: number;
+  watchFolders: WatchFolder[];
+  autoSwitchAccount: boolean;
+  defaultEditor: SupportedEditor;
 }
 
 export interface GhAccount {
@@ -31,4 +48,50 @@ export interface ScanResult {
   repositories: RepositoryWorktrees[];
   totalWorktrees: number;
   totalOrphaned: number;
+}
+
+export type SupportedEditor = 'antigravity' | 'vscode' | 'cursor' | 'windsurf' | 'explorer' | 'wt';
+
+export interface EditorInfo {
+  id: SupportedEditor;
+  name: string;
+  isAvailable: boolean;
+  iconName: string;
+}
+
+export interface BranchEntry {
+  name: string;
+  shortName: string;
+  isRemote: boolean;
+  isCurrent: boolean;
+  isLockedByOther: boolean;
+  lockedWorktreePath?: string;
+  lastCommitSha?: string;
+  lastCommitMessage?: string;
+}
+
+export interface WorktreeBranchesResponse {
+  repoPath: string;
+  worktreePath: string;
+  currentBranch: string | null;
+  branches: BranchEntry[];
+}
+
+export interface CheckoutBranchResult {
+  success: boolean;
+  newBranch: string;
+  headSha: string;
+  message: string;
+}
+
+export interface SuggestWorktreePathResult {
+  suggestedPath: string;
+  alreadyExists: boolean;
+}
+
+export interface CreateWorktreeResult {
+  success: boolean;
+  worktreePath: string;
+  branchName: string;
+  message: string;
 }

@@ -1,18 +1,49 @@
-use crate::services::worktree_cleaner::{RepositoryWorktrees, WorktreeCleanerService};
+use crate::services::config::{AppConfig, ConfigService};
+use crate::services::git::{
+    CheckoutBranchResult, CreateWorktreeResult, EditorInfo, GitService, SuggestWorktreePathResult,
+    WorktreeBranchesResponse,
+};
+use crate::services::worktree_cleaner::WorktreeCleanerService;
 
 #[tauri::command]
-pub async fn scan_worktrees() -> Result<Vec<RepositoryWorktrees>, String> {
-    let repo_paths = WorktreeCleanerService::discover_repositories();
-    let mut results = Vec::new();
-
-    for path in repo_paths {
-        if let Some(repo_info) = WorktreeCleanerService::scan_repository(path) {
-            results.push(repo_info);
-        }
-    }
-
-    Ok(results)
+pub async fn get_app_config() -> Result<AppConfig, String> {
+    Ok(ConfigService::load_config())
 }
+
+#[tauri::command]
+pub async fn save_app_config(config: AppConfig) -> Result<AppConfig, String> {
+    ConfigService::save_config(&config)?;
+    Ok(config)
+}
+
+use rayon::prelude::*;
+use tauri::{AppHandle, Emitter};
+
+#[tauri::command]
+pub async fn scan_worktrees(app: AppHandle) -> Result<(), String> {
+    let config = ConfigService::load_config();
+    let discovered = WorktreeCleanerService::discover_repositories(&config);
+
+    tauri::async_runtime::spawn_blocking(move || {
+        discovered
+            .par_iter()
+            .filter_map(|repo| {
+                WorktreeCleanerService::scan_repository(
+                    &repo.path,
+                    repo.associated_account.clone(),
+                    repo.watch_folder_path.clone(),
+                )
+            })
+            .for_each(|repo_info| {
+                let _ = app.emit("repo-scanned", &repo_info);
+            });
+
+        let _ = app.emit("scan-complete", ());
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 
 #[tauri::command]
 pub async fn remove_worktree(
@@ -31,4 +62,48 @@ pub async fn prune_worktrees(repo_path: String) -> Result<String, String> {
 #[tauri::command]
 pub async fn open_path(path: String) -> Result<(), String> {
     open::that(&path).map_err(|e| format!("Failed to open path: {}", e))
+}
+
+#[tauri::command]
+pub async fn open_in_editor(editor: String, path: String) -> Result<(), String> {
+    GitService::open_in_editor(&editor, &path)
+}
+
+#[tauri::command]
+pub async fn detect_installed_editors() -> Result<Vec<EditorInfo>, String> {
+    Ok(GitService::detect_installed_editors())
+}
+
+#[tauri::command]
+pub async fn list_branches(
+    repo_path: String,
+    worktree_path: String,
+) -> Result<WorktreeBranchesResponse, String> {
+    GitService::list_branches_for_worktree(&repo_path, &worktree_path)
+}
+
+#[tauri::command]
+pub async fn checkout_worktree_branch(
+    worktree_path: String,
+    target_branch: String,
+) -> Result<CheckoutBranchResult, String> {
+    GitService::checkout_worktree_branch(&worktree_path, &target_branch)
+}
+
+#[tauri::command]
+pub async fn suggest_worktree_path(
+    repo_path: String,
+    branch_name: String,
+) -> Result<SuggestWorktreePathResult, String> {
+    GitService::suggest_worktree_path(&repo_path, &branch_name)
+}
+
+#[tauri::command]
+pub async fn create_worktree(
+    repo_path: String,
+    target_path: String,
+    base_branch: String,
+    new_branch_name: Option<String>,
+) -> Result<CreateWorktreeResult, String> {
+    GitService::create_worktree(&repo_path, &target_path, &base_branch, new_branch_name.as_deref())
 }

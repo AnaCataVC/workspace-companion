@@ -1,11 +1,13 @@
 <script lang="ts">
   import { isScanning, isPinned, searchFilter } from '../stores/worktrees';
   import { activeGhAccount } from '../stores/ghAuth';
-  import { RefreshCw, Pin, PinOff, Github, Search } from 'lucide-svelte';
+  import { RefreshCw, Pin, PinOff, Github, Search, Plus, Settings2 } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
 
   export let onRefresh: () => void;
   export let onOpenGhModal: () => void;
+  export let onOpenNewWorktreeModal: () => void;
+  export let onOpenSettingsModal: () => void;
 
   const dispatch = createEventDispatcher();
 
@@ -24,6 +26,16 @@
     </div>
 
     <div class="flex items-center gap-1.5">
+      <!-- New Worktree Button -->
+      <button
+        on:click={onOpenNewWorktreeModal}
+        title="Create new Git worktree"
+        class="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-indigo-600 hover:bg-indigo-500 text-white transition-colors shadow-xs"
+      >
+        <Plus size={13} />
+        <span>New</span>
+      </button>
+
       <!-- GitHub Account Badge Button -->
       <button
         on:click={onOpenGhModal}
@@ -34,6 +46,15 @@
         <span class="font-mono text-[11px] truncate max-w-[90px]">
           {$activeGhAccount || 'No auth'}
         </span>
+      </button>
+
+      <!-- Watched Folders / Settings Button -->
+      <button
+        on:click={onOpenSettingsModal}
+        title="Watched Folders & Account Settings"
+        class="p-1.5 rounded-md hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 transition-colors"
+      >
+        <Settings2 size={14} />
       </button>
 
       <!-- Pin Window Toggle -->
