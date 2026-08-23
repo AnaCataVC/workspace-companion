@@ -77,21 +77,6 @@ impl GhService {
             }
         }
 
-        // If no structured accounts found but users are known, check fallback
-        if accounts.is_empty() {
-            // Default known accounts for context or fallback
-            accounts.push(GhAccount {
-                username: "AnaCataVC".to_string(),
-                active: true,
-                host: "github.com".to_string(),
-            });
-            accounts.push(GhAccount {
-                username: "CataVillalobosC".to_string(),
-                active: false,
-                host: "github.com".to_string(),
-            });
-        }
-
         Ok(accounts)
     }
 

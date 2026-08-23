@@ -65,8 +65,8 @@
         return {
           version: 1,
           watchFolders: [
-            { id: '1', path: 'C:/Users/anaca/Repos', accountUsername: 'AnaCataVC', enabled: true, maxDepth: 1 },
-            { id: '2', path: 'C:/Users/anaca/Archivos Trabajo/Repositories', accountUsername: 'CataVillalobosC', enabled: true, maxDepth: 4 }
+            { id: '1', path: 'C:/Projects/Personal', accountUsername: 'alex-dev', enabled: true, maxDepth: 1 },
+            { id: '2', path: 'C:/Projects/Work', accountUsername: 'acme-corp', enabled: true, maxDepth: 4 }
           ],
           autoSwitchAccount: true,
           defaultEditor: 'vscode'
@@ -81,8 +81,8 @@
 
       if (cmd === 'get_gh_accounts') {
         return [
-          { username: 'AnaCataVC', active: true, host: 'github.com' },
-          { username: 'CataVillalobosC', active: false, host: 'github.com' }
+          { username: 'alex-dev', active: true, host: 'github.com' },
+          { username: 'acme-corp', active: false, host: 'github.com' }
         ] as unknown as T;
       }
       if (cmd === 'list_branches') {
@@ -100,7 +100,7 @@
         const repo = args.repoPath.split(/[\/\\]/).pop() || 'repo';
         const clean = (args.branchName || 'branch').replace(/[\/\\]/g, '-');
         return {
-          suggestedPath: `C:/Users/anaca/Repos/${repo}-${clean}`,
+          suggestedPath: `C:/Projects/Personal/${repo}-${clean}`,
           alreadyExists: false
         } as unknown as T;
       }
