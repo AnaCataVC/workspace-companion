@@ -74,6 +74,16 @@ npm run build
 
 ---
 
+### 5. Documentation & Architectural Decisions
+- 📖 [Technical Architecture & Design](docs/architecture.md)
+- 🏛️ [Architectural Decision Records (ADRs)](docs/adr/)
+  - [ADR 0001: Tauri v2 System Tray & Window Positioning](docs/adr/0001-tauri-v2-system-tray-and-window-positioning.md)
+  - [ADR 0002: Windows Subprocess Creation Flag](docs/adr/0002-windows-subprocess-no-window-flag.md)
+  - [ADR 0003: Git Porcelain Protocol & Pre-flight Safety](docs/adr/0003-git-porcelain-preflight-safety.md)
+- 🤝 [Contributing Guidelines](CONTRIBUTING.md)
+
+---
+
 <a name="español"></a>
 ## Español
 
@@ -115,3 +125,13 @@ npm install
 # 3. Ejecutar en modo desarrollo con Tauri
 npx tauri dev
 ```
+
+---
+
+### 5. Documentación y Decisiones Arquitectónicas
+- 📖 [Arquitectura Técnica y Diseño](docs/architecture.md)
+- 🏛️ [Registro de Decisiones Arquitectónicas (ADRs)](docs/adr/)
+  - [ADR 0001: Integración con System Tray y Posicionamiento de Ventana](docs/adr/0001-tauri-v2-system-tray-and-window-positioning.md)
+  - [ADR 0002: Flag Win32 de Creación de Subprocesos](docs/adr/0002-windows-subprocess-no-window-flag.md)
+  - [ADR 0003: Protocolo Git Porcelain y Guardas de Seguridad](docs/adr/0003-git-porcelain-preflight-safety.md)
+- 🤝 [Guía de Contribución](CONTRIBUTING.md)
