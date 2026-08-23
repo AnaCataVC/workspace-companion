@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="en" class="scroll-smooth">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Workspace Companion — Spotlight & Tray Manager for Git Worktrees</title>
+    <meta name="description" content="Ultra-lightweight Windows system tray utility and Spotlight-style floating dashboard for Git Worktrees and multi-account GitHub CLI management." />
+    <link rel="icon" type="image/png" href="./icon.png" />
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    
+    <!-- Tailwind CSS (CDN for standalone preview) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+              mono: ['"JetBrains Mono"', 'monospace'],
+            },
+            colors: {
+              brand: {
+                50: '#eef2ff',
+                100: '#e0e7ff',
+                400: '#818cf8',
+                500: '#6366f1',
+                600: '#4f46e5',
+                700: '#4338ca',
+                900: '#312e81',
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body {
+        font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+        background-color: #0c0e14;
+        color: #f3f4f6;
+      }
+      .glow-mesh {
+        background: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.15) 0%, rgba(15, 23, 42, 0) 70%);
+      }
+      .glass-card {
+        background: rgba(24, 24, 27, 0.7);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      .glass-card:hover {
+        border-color: rgba(99, 102, 241, 0.3);
+      }
+      .spotlight-glow {
+        box-shadow: 0 0 50px -10px rgba(99, 102, 241, 0.25), 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+      }
+      /* Custom scrollbars */
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #0f1117;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #27272a;
+        border-radius: 9999px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #3f3f46;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen bg-[#0c0e14] text-neutral-100 selection:bg-brand-500 selection:text-white relative overflow-x-hidden">
+
+    <!-- Background decorative gradients -->
+    <div class="fixed inset-0 pointer-events-none z-0 glow-mesh"></div>
+    <div class="fixed top-[-10%] right-[-5%] w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
+    <div class="fixed top-[40%] left-[-10%] w-[600px] h-[600px] bg-purple-600/10 rounded-full blur-3xl pointer-events-none"></div>
+
+    <!-- Header Navigation -->
+    <header class="sticky top-0 z-50 backdrop-blur-md bg-[#0c0e14]/80 border-b border-white/[0.06]">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <a href="#" class="flex items-center gap-3 group">
+          <div class="relative w-9 h-9 rounded-xl overflow-hidden shadow-lg shadow-indigo-500/20 ring-1 ring-white/10 group-hover:ring-indigo-400/40 transition">
+            <img src="./icon.png" alt="Workspace Companion Logo" class="w-full h-full object-cover" />
+          </div>
+          <div class="flex flex-col">
+            <span class="font-bold text-base tracking-tight text-white group-hover:text-indigo-300 transition">Workspace Companion</span>
+            <span class="text-[10px] font-mono text-neutral-400 tracking-wider uppercase">Tray & Worktrees</span>
+          </div>
+        </a>
+
+        <nav class="hidden md:flex items-center gap-8 text-sm font-medium text-neutral-300">
+          <a href="#features" class="hover:text-white transition">Features</a>
+          <a href="#mockup" class="hover:text-white transition">Spotlight Preview</a>
+          <a href="#architecture" class="hover:text-white transition">Architecture</a>
+          <a href="#quickstart" class="hover:text-white transition">Get Started</a>
+        </nav>
+
+        <div class="flex items-center gap-3">
+          <a href="https://github.com/AnaCataVC/workspace-companion" target="_blank" rel="noopener noreferrer" class="hidden sm:inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold text-neutral-200 bg-neutral-800/80 hover:bg-neutral-700/80 border border-white/10 transition">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+            <span>GitHub</span>
+          </a>
+          <a href="#quickstart" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold text-white bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 shadow-md shadow-indigo-500/20 transition">
+            <span>Download v0.1.0</span>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="relative z-10">
+
+      <!-- Hero Section -->
+      <section class="pt-20 pb-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto text-center">
+        <!-- Floating status pill -->
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-950/60 border border-indigo-500/30 text-indigo-300 text-xs font-semibold mb-6 shadow-inner">
+          <span class="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
+          <span>Native Windows Tray & Spotlight Utility</span>
+          <span class="text-neutral-500">•</span>
+          <span class="text-neutral-300 font-mono">Tauri v2 + Rust</span>
+        </div>
+
+        <h1 class="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight text-white max-w-4xl mx-auto leading-[1.12]">
+          Instant <span class="bg-gradient-to-r from-indigo-400 via-purple-300 to-indigo-200 bg-clip-text text-transparent">Git Worktrees</span> & multi-account workflows.
+        </h1>
+
+        <p class="mt-6 text-lg sm:text-xl text-neutral-300 max-w-2xl mx-auto font-normal leading-relaxed">
+          The ultra-lightweight, zero-flicker system tray dashboard designed for Windows developers. Switch branches, clean orphaned worktrees, and toggle GitHub identities in milliseconds.
+        </p>
+
+        <!-- CTA Buttons -->
+        <div class="mt-10 flex flex-wrap items-center justify-center gap-4">
+          <a href="#quickstart" class="px-6 py-3.5 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-600/30 hover:shadow-indigo-500/40 transform hover:-translate-y-0.5 transition flex items-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            <span>Download for Windows</span>
+          </a>
+          <a href="https://github.com/AnaCataVC/workspace-companion" target="_blank" rel="noopener noreferrer" class="px-6 py-3.5 rounded-xl text-sm font-semibold text-neutral-200 bg-neutral-900/80 hover:bg-neutral-800 border border-white/10 hover:border-white/20 transition flex items-center gap-2">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+            <span>Star on GitHub</span>
+          </a>
+        </div>
+
+        <!-- Metric Badges -->
+        <div class="mt-12 grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-4xl mx-auto pt-6 border-t border-white/[0.06]">
+          <div class="p-3 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+            <div class="text-2xl font-bold font-mono text-indigo-400">&lt; 40 MB</div>
+            <div class="text-xs text-neutral-400 mt-1">Background RAM</div>
+          </div>
+          <div class="p-3 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+            <div class="text-2xl font-bold font-mono text-emerald-400">0 ms</div>
+            <div class="text-xs text-neutral-400 mt-1">Console Flicker</div>
+          </div>
+          <div class="p-3 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+            <div class="text-2xl font-bold font-mono text-purple-400">1-Click</div>
+            <div class="text-xs text-neutral-400 mt-1">GitHub Account Switch</div>
+          </div>
+          <div class="p-3 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+            <div class="text-2xl font-bold font-mono text-amber-400">100% Safe</div>
+            <div class="text-xs text-neutral-400 mt-1">Pre-flight Dirty Checks</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Realistic UI Mockup Section -->
+      <section id="mockup" class="py-16 px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto">
+        <div class="text-center mb-8">
+          <h2 class="text-xs uppercase tracking-widest font-mono text-indigo-400 font-semibold">Live Desktop Experience</h2>
+          <p class="text-2xl sm:text-3xl font-bold text-white mt-1">Spotlight-Style Tray Dashboard</p>
+          <p class="text-sm text-neutral-400 mt-2 max-w-xl mx-auto">Always within reach. Click the system tray icon or trigger your global hotkey to reveal active worktrees and switch context seamlessly.</p>
+        </div>
+
+        <!-- Realistic Mockup Container -->
+        <div class="relative mx-auto rounded-2xl p-1 sm:p-2 bg-gradient-to-b from-white/15 to-white/5 border border-white/10 spotlight-glow">
+          
+          <!-- Mockup Window Shell -->
+          <div class="rounded-xl overflow-hidden bg-neutral-900 border border-neutral-800 shadow-2xl text-left select-none font-sans">
+            
+            <!-- Window Title Bar -->
+            <div class="h-10 bg-neutral-950/80 px-4 flex items-center justify-between border-b border-white/[0.06]">
+              <div class="flex items-center gap-2">
+                <div class="w-3 h-3 rounded-full bg-rose-500/80"></div>
+                <div class="w-3 h-3 rounded-full bg-amber-500/80"></div>
+                <div class="w-3 h-3 rounded-full bg-emerald-500/80"></div>
+                <span class="text-xs text-neutral-400 font-medium ml-2 flex items-center gap-1.5">
+                  <img src="./icon.png" class="w-3.5 h-3.5 rounded" alt="" />
+                  Workspace Companion — Spotlight
+                </span>
+              </div>
+              <div class="flex items-center gap-3">
+                <div class="flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-950/70 border border-emerald-800/60 text-[11px] text-emerald-400 font-mono">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                  gh: alex-dev (Personal)
+                </div>
+                <span class="text-neutral-500 text-xs font-mono">Tray Active</span>
+              </div>
+            </div>
+
+            <!-- Dashboard Header Inside App -->
+            <div class="p-4 bg-neutral-900/90 border-b border-white/[0.06] flex items-center justify-between gap-4">
+              <div class="flex items-center gap-3">
+                <div class="relative">
+                  <input type="text" placeholder="Search worktrees, branches, or repositories..." readonly value="workspace-companion" class="bg-neutral-950 border border-neutral-700/60 text-xs text-neutral-200 rounded-lg pl-8 pr-3 py-1.5 w-64 focus:outline-none placeholder-neutral-500 font-mono cursor-default" />
+                  <svg class="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                </div>
+                <div class="hidden sm:flex items-center gap-1 bg-neutral-950 p-1 rounded-lg border border-neutral-800 text-xs">
+                  <button class="px-2.5 py-1 rounded bg-indigo-600 text-white font-medium">All (3)</button>
+                  <button class="px-2.5 py-1 rounded text-neutral-400 hover:text-white">alex-dev</button>
+                  <button class="px-2.5 py-1 rounded text-neutral-400 hover:text-white">acme-corp</button>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <button class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-600/90 hover:bg-indigo-600 text-white text-xs font-semibold shadow-sm transition">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                  <span>New Worktree</span>
+                </button>
+                <button class="p-1.5 rounded-lg bg-neutral-800 text-neutral-300 hover:text-white border border-white/5">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Worktrees List Container -->
+            <div class="p-4 space-y-3 bg-neutral-900/60 max-h-[460px] overflow-y-auto">
+              
+              <!-- Repo Group 1 -->
+              <div class="rounded-xl bg-neutral-950/70 border border-neutral-800/80 p-3.5">
+                <div class="flex items-center justify-between mb-3 pb-2 border-b border-white/[0.04]">
+                  <div class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                    <span class="font-bold text-sm text-neutral-100">workspace-companion</span>
+                    <span class="text-[11px] font-mono text-neutral-500">2 worktrees</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-[10px] px-2 py-0.5 rounded bg-indigo-950/80 text-indigo-300 border border-indigo-800/50 font-mono">@alex-dev</span>
+                    <button class="text-xs text-neutral-400 hover:text-indigo-300 flex items-center gap-1">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                      Add
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Worktree Card 1 (Main / Clean) -->
+                <div class="rounded-lg bg-neutral-900/90 border border-neutral-800 p-3 mb-2 hover:border-neutral-700 transition">
+                  <div class="flex items-start justify-between gap-2">
+                    <div>
+                      <div class="flex items-center gap-2">
+                        <span class="font-bold text-xs text-indigo-300 font-mono flex items-center gap-1">
+                          <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/></svg>
+                          main
+                        </span>
+                        <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800/40">Active • Clean</span>
+                        <span class="text-[10px] font-mono text-neutral-500">#e8f492b</span>
+                      </div>
+                      <p class="text-xs text-neutral-400 mt-1 truncate">feat: implement spotlight floating window positioning</p>
+                      <div class="text-[11px] font-mono text-neutral-500 mt-1">/workspace-companion</div>
+                    </div>
+
+                    <!-- Quick Actions -->
+                    <div class="flex items-center gap-1.5">
+                      <button title="Open in VS Code" class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-[11px] font-medium text-neutral-200 border border-white/5 flex items-center gap-1">
+                        <span>VS Code</span>
+                      </button>
+                      <button title="Open in Cursor" class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-[11px] font-medium text-neutral-200 border border-white/5">
+                        <span>Cursor</span>
+                      </button>
+                      <button title="Switch Branch" class="p-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Worktree Card 2 (Feature / Dirty) -->
+                <div class="rounded-lg bg-neutral-900/90 border border-neutral-800 p-3 hover:border-neutral-700 transition">
+                  <div class="flex items-start justify-between gap-2">
+                    <div>
+                      <div class="flex items-center gap-2">
+                        <span class="font-bold text-xs text-purple-300 font-mono flex items-center gap-1">
+                          <svg class="w-3.5 h-3.5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/></svg>
+                          feat/spotlight-tray-redesign
+                        </span>
+                        <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-950/80 text-amber-300 border border-amber-800/40">● 2 modified</span>
+                        <span class="text-[10px] font-mono text-neutral-500">#8c291f0</span>
+                      </div>
+                      <p class="text-xs text-neutral-400 mt-1 truncate">refactor: modern pastel badges and blur effects</p>
+                      <div class="text-[11px] font-mono text-neutral-500 mt-1">/workspace-companion-spotlight</div>
+                    </div>
+
+                    <div class="flex items-center gap-1.5">
+                      <button class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-[11px] font-medium text-neutral-200 border border-white/5">
+                        <span>VS Code</span>
+                      </button>
+                      <button class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-[11px] font-medium text-neutral-200 border border-white/5">
+                        <span>Terminal</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Repo Group 2 (Work Repo / Orphaned Worktree) -->
+              <div class="rounded-xl bg-neutral-950/70 border border-neutral-800/80 p-3.5">
+                <div class="flex items-center justify-between mb-3 pb-2 border-b border-white/[0.04]">
+                  <div class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                    <span class="font-bold text-sm text-neutral-100">enterprise-services-api</span>
+                    <span class="text-[11px] font-mono text-neutral-500">1 worktree</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-[10px] px-2 py-0.5 rounded bg-neutral-800 text-neutral-300 border border-neutral-700 font-mono">@acme-corp</span>
+                  </div>
+                </div>
+
+                <!-- Orphaned Worktree Card -->
+                <div class="rounded-lg bg-neutral-900/90 border border-rose-900/40 p-3 hover:border-rose-800/60 transition">
+                  <div class="flex items-start justify-between gap-2">
+                    <div>
+                      <div class="flex items-center gap-2">
+                        <span class="font-bold text-xs text-rose-300 font-mono">fix/auth-token-refresh</span>
+                        <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-950/80 text-rose-300 border border-rose-800/40">Orphaned • Merged upstream</span>
+                      </div>
+                      <p class="text-xs text-neutral-400 mt-1">Branch deleted on remote • Safe to delete (Clean)</p>
+                      <div class="text-[11px] font-mono text-neutral-500 mt-1">/enterprise-services-api-fix-auth</div>
+                    </div>
+
+                    <div class="flex items-center gap-1.5">
+                      <button class="px-2.5 py-1 rounded bg-rose-950/80 hover:bg-rose-900/80 text-rose-300 border border-rose-800/60 text-[11px] font-semibold flex items-center gap-1 transition">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        <span>Clean</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Mockup Status Footer -->
+            <div class="h-8 bg-neutral-950 px-4 flex items-center justify-between text-[11px] text-neutral-500 font-mono border-t border-white/[0.04]">
+              <span>3 worktrees scanned across 2 watch folders</span>
+              <span>Auto-switch: Enabled</span>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- Key Features Grid -->
+      <section id="features" class="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+        <div class="text-center max-w-3xl mx-auto mb-16">
+          <h2 class="text-xs uppercase tracking-widest font-mono text-indigo-400 font-semibold">Engineered For High-Velocity Devs</h2>
+          <p class="text-3xl sm:text-4xl font-extrabold text-white mt-2">Built for multi-repo, multi-account chaos.</p>
+          <p class="text-neutral-400 text-sm sm:text-base mt-3">Say goodbye to terminal popups, lost worktrees, and committing code with the wrong GitHub email.</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          
+          <!-- Feature 1 -->
+          <div class="glass-card rounded-2xl p-6 transition duration-300 hover:-translate-y-1">
+            <div class="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 mb-4">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            </div>
+            <h3 class="text-lg font-bold text-white">Zero Console Flickering</h3>
+            <p class="text-sm text-neutral-400 mt-2 leading-relaxed">
+              Background Git and GitHub CLI executions leverage low-level Win32 <code class="text-indigo-300 font-mono text-xs">CREATE_NO_WINDOW = 0x08000000</code> flags. Never suffer from annoying command prompt popups again.
+            </p>
+          </div>
+
+          <!-- Feature 2 -->
+          <div class="glass-card rounded-2xl p-6 transition duration-300 hover:-translate-y-1">
+            <div class="w-10 h-10 rounded-xl bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-400 mb-4">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+            </div>
+            <h3 class="text-lg font-bold text-white">1-Click GitHub Identity Switch</h3>
+            <p class="text-sm text-neutral-400 mt-2 leading-relaxed">
+              Seamlessly toggle between personal (<code class="text-purple-300 font-mono text-xs">alex-dev</code>) and corporate (<code class="text-purple-300 font-mono text-xs">acme-corp</code>) profiles. Automatic context detection matches active folder to identity.
+            </p>
+          </div>
+
+          <!-- Feature 3 -->
+          <div class="glass-card rounded-2xl p-6 transition duration-300 hover:-translate-y-1">
+            <div class="w-10 h-10 rounded-xl bg-rose-600/20 border border-rose-500/30 flex items-center justify-center text-rose-400 mb-4">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            </div>
+            <h3 class="text-lg font-bold text-white">Safe Orphaned Worktree Cleaner</h3>
+            <p class="text-sm text-neutral-400 mt-2 leading-relaxed">
+              Detect worktrees whose remote upstream branch has been deleted or merged. Equipped with mandatory pre-flight dirty checks (<code class="text-rose-300 font-mono text-xs">git status --porcelain</code>) to prevent accidental data loss.
+            </p>
+          </div>
+
+          <!-- Feature 4 -->
+          <div class="glass-card rounded-2xl p-6 transition duration-300 hover:-translate-y-1">
+            <div class="w-10 h-10 rounded-xl bg-emerald-600/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-4">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+            </div>
+            <h3 class="text-lg font-bold text-white">Spotlight Floating Window</h3>
+            <p class="text-sm text-neutral-400 mt-2 leading-relaxed">
+              Resides silently in the Windows system tray consuming under 40 MB RAM. Smoothly pops up adjacent to your taskbar when triggered and auto-hides when losing focus.
+            </p>
+          </div>
+
+          <!-- Feature 5 -->
+          <div class="glass-card rounded-2xl p-6 transition duration-300 hover:-translate-y-1">
+            <div class="w-10 h-10 rounded-xl bg-amber-600/20 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-4">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+            </div>
+            <h3 class="text-lg font-bold text-white">Multi-Editor One-Click Launch</h3>
+            <p class="text-sm text-neutral-400 mt-2 leading-relaxed">
+              Automatically detects installed IDEs including VS Code, Cursor, Windsurf, Neovim, and Windows Terminal. Open any worktree in your favorite editor in 1 click.
+            </p>
+          </div>
+
+          <!-- Feature 6 -->
+          <div class="glass-card rounded-2xl p-6 transition duration-300 hover:-translate-y-1">
+            <div class="w-10 h-10 rounded-xl bg-cyan-600/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400 mb-4">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+            </div>
+            <h3 class="text-lg font-bold text-white">Git Porcelain Protocol Parsing</h3>
+            <p class="text-sm text-neutral-400 mt-2 leading-relaxed">
+              Deterministic parsing of machine-readable <code class="text-cyan-300 font-mono text-xs">git worktree list --porcelain</code> outputs handles bare repos, locked states, and detached HEADs across all localized Git installations.
+            </p>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Architecture Section -->
+      <section id="architecture" class="py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto border-t border-white/[0.06]">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+          <div>
+            <span class="text-xs uppercase tracking-widest font-mono text-indigo-400 font-semibold">Technical Architecture</span>
+            <h2 class="text-3xl font-extrabold text-white mt-2">Engineered with Rust & Svelte 5</h2>
+            <p class="text-neutral-300 mt-4 leading-relaxed">
+              Designed according to strict Architectural Decision Records (ADRs) to guarantee safety, zero window flashes, and ultra-low footprint.
+            </p>
+
+            <ul class="mt-6 space-y-3 text-sm text-neutral-300">
+              <li class="flex items-center gap-3">
+                <span class="w-6 h-6 rounded-md bg-indigo-950 border border-indigo-800 text-indigo-400 flex items-center justify-center font-mono text-xs">01</span>
+                <span><strong>ADR 0001:</strong> Tauri v2 System Tray & Window Positioning (<code class="font-mono text-xs text-indigo-300">tauri-plugin-positioner</code>)</span>
+              </li>
+              <li class="flex items-center gap-3">
+                <span class="w-6 h-6 rounded-md bg-indigo-950 border border-indigo-800 text-indigo-400 flex items-center justify-center font-mono text-xs">02</span>
+                <span><strong>ADR 0002:</strong> Win32 Subprocess Flag (<code class="font-mono text-xs text-indigo-300">CREATE_NO_WINDOW = 0x08000000</code>)</span>
+              </li>
+              <li class="flex items-center gap-3">
+                <span class="w-6 h-6 rounded-md bg-indigo-950 border border-indigo-800 text-indigo-400 flex items-center justify-center font-mono text-xs">03</span>
+                <span><strong>ADR 0003:</strong> Git Porcelain Protocol & Pre-flight Safety Guardrails</span>
+              </li>
+            </ul>
+          </div>
+
+          <div class="glass-card rounded-2xl p-6 font-mono text-xs text-neutral-300 border border-white/10 overflow-x-auto shadow-xl">
+            <div class="flex items-center justify-between pb-3 border-b border-white/[0.06] text-neutral-500 mb-4">
+              <span>architecture-overview.rs</span>
+              <span>Rust 1.97+ / Tauri v2</span>
+            </div>
+            <pre><code class="text-neutral-300 leading-relaxed"><span class="text-indigo-400">pub fn</span> <span class="text-amber-300">execute_silent_git</span>(args: &amp;[&amp;str], cwd: &amp;Path) -&gt; <span class="text-emerald-400">Result</span>&lt;String, GitError&gt; {
+    <span class="text-neutral-500">// Prevent Windows terminal pop-ups</span>
+    <span class="text-indigo-400">const</span> CREATE_NO_WINDOW: u32 = 0x08000000;
+    
+    <span class="text-indigo-400">let</span> output = Command::new(<span class="text-emerald-300">"git"</span>)
+        .args(args)
+        .current_dir(cwd)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()?;
+        
+    <span class="text-neutral-500">// Parse machine-readable porcelain</span>
+    GitPorcelain::parse_output(output)
+}</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- Quickstart / Installation Section -->
+      <section id="quickstart" class="py-20 px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto">
+        <div class="glass-card rounded-3xl p-8 sm:p-12 border border-indigo-500/20 text-center relative overflow-hidden">
+          <div class="absolute inset-0 bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-indigo-500/10 pointer-events-none"></div>
+
+          <h2 class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+            Ready to streamline your workspace?
+          </h2>
+          <p class="text-neutral-300 text-sm sm:text-base mt-3 max-w-xl mx-auto">
+            Clone the repository to build locally or download the latest standalone release installer.
+          </p>
+
+          <div class="mt-8 max-w-lg mx-auto rounded-xl bg-neutral-950 border border-neutral-800 p-4 text-left font-mono text-xs text-neutral-300 flex items-center justify-between">
+            <span class="truncate">git clone https://github.com/AnaCataVC/workspace-companion.git</span>
+            <button onclick="navigator.clipboard.writeText('git clone https://github.com/AnaCataVC/workspace-companion.git'); alert('Command copied to clipboard!');" class="ml-3 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-sans font-semibold text-xs transition whitespace-nowrap">
+              Copy
+            </button>
+          </div>
+
+          <div class="mt-8 flex flex-wrap items-center justify-center gap-4">
+            <a href="https://github.com/AnaCataVC/workspace-companion/releases" target="_blank" rel="noopener noreferrer" class="px-6 py-3 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-600/30 transition">
+              Download Installer (.msi / .exe)
+            </a>
+            <a href="https://github.com/AnaCataVC/workspace-companion" target="_blank" rel="noopener noreferrer" class="px-6 py-3 rounded-xl text-sm font-semibold text-neutral-200 bg-neutral-800 hover:bg-neutral-700 border border-white/10 transition">
+              View on GitHub
+            </a>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Footer with Author Copy & References -->
+    <footer class="relative z-10 border-t border-white/[0.08] bg-neutral-950/80 backdrop-blur-md py-12 px-4 sm:px-6 lg:px-8">
+      <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+        
+        <!-- Left: Branding & Copy -->
+        <div class="flex items-center gap-3">
+          <img src="./icon.png" alt="Workspace Companion Icon" class="w-8 h-8 rounded-lg shadow" />
+          <div class="flex flex-col text-left">
+            <span class="font-bold text-sm text-white">Workspace Companion</span>
+            <span class="text-xs text-neutral-400">Open-source desktop utility under MIT License</span>
+          </div>
+        </div>
+
+        <!-- Center: Author Attribution with Direct Website Reference -->
+        <div class="text-center text-xs text-neutral-400">
+          Designed & crafted with precision by 
+          <a href="https://ana-catalina.com" target="_blank" rel="noopener noreferrer" class="font-semibold text-indigo-400 hover:text-indigo-300 underline underline-offset-4 decoration-indigo-500/40 hover:decoration-indigo-400 transition">
+            Ana Catalina
+          </a>
+        </div>
+
+        <!-- Right: Links -->
+        <div class="flex items-center gap-6 text-xs text-neutral-400">
+          <a href="https://github.com/AnaCataVC/workspace-companion" target="_blank" rel="noopener noreferrer" class="hover:text-white transition">GitHub Repo</a>
+          <a href="https://github.com/AnaCataVC/workspace-companion/blob/main/docs/architecture.md" target="_blank" rel="noopener noreferrer" class="hover:text-white transition">Docs</a>
+          <a href="https://github.com/AnaCataVC/workspace-companion/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" class="hover:text-white transition">MIT License</a>
+        </div>
+
+      </div>
+    </footer>
+
+  </body>
+</html>
