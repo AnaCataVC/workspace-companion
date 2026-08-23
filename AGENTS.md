@@ -10,13 +10,15 @@ This document serves as the operational manual, architecture reference, and work
 
 ### Core Architecture:
 - **`src-tauri/` (Rust Backend)**:
-  - System tray initialization (`tauri::tray::TrayIconBuilder`).
-  - Window positioning and focus auto-hide (`tauri-plugin-positioner`).
-  - Safe subprocess execution with `CREATE_NO_WINDOW = 0x08000000` to prevent console flashing.
-  - Rust command handlers for Git porcelain parsing and GitHub CLI management.
+  - System tray initialization & Spotlight floating window positioning (`tauri::tray::TrayIconBuilder`, `tauri-plugin-positioner`, `tray.rs`).
+  - Safe subprocess execution with `CREATE_NO_WINDOW = 0x08000000` to prevent console flashing on Windows.
+  - Modular services layer in `src-tauri/src/services/` (`git.rs`, `gh.rs`, `worktree_cleaner.rs`, `config.rs`).
+  - Tauri IPC command handlers in `src-tauri/src/commands/` (`worktrees.rs`, `gh_auth.rs`).
 - **`src/` (Svelte 5 & TypeScript Frontend)**:
-  - `App.svelte`: Main floating panel and active view state.
-  - `lib/`: Svelte 5 components (WorktreeList, RepoScanner, AccountSwitcher, OrphanCleaner).
+  - `App.svelte`: Root floating panel, active views, and global shortcuts.
+  - `lib/components/`: Modular Svelte 5 components (`WorktreeList`, `WorktreeCard`, `NewWorktreeModal`, `BranchSwitcherModal`, `OrphanCleanerModal`, `WatchFoldersModal`, `GhAccountModal`, `Header`, `AccountFilterBar`).
+  - `lib/stores/`: Reactive store modules (`worktrees.ts`, `ghAuth.ts`, `appConfig.ts`, `editors.ts`).
+  - `lib/types.ts`: TypeScript contracts and data structures.
   - Modern pastel theming and Tailwind CSS styling.
 - **`releases/`**: Standalone installers (`.msi`, `setup.exe`, Portable `.exe`).
 
@@ -27,15 +29,25 @@ This document serves as the operational manual, architecture reference, and work
 ```text
 workspace-companion/
 ├── src/                           # Svelte 5 frontend application
-│   ├── lib/                       # Svelte components & utilities
+│   ├── lib/                       # Svelte components, stores, & utilities
+│   │   ├── components/            # UI components (cards, modals, header, filters)
+│   │   ├── stores/                # Reactive state management stores
+│   │   └── types.ts               # Shared TypeScript interfaces & types
 │   ├── app.css                    # Tailwind CSS directives and custom scrollbars
 │   ├── App.svelte                 # Root application component
 │   └── main.ts                    # Frontend entrypoint
 ├── src-tauri/                     # Rust backend & Tauri configuration
-│   ├── src/                       # Rust source code (commands, tray, git engine)
+│   ├── src/                       # Rust source code
+│   │   ├── commands/              # Tauri IPC command invocations
+│   │   ├── services/              # Git engine, GitHub CLI, cleaner, and config services
+│   │   ├── tray.rs                # System tray & window focus management
+│   │   ├── lib.rs                 # Tauri plugin builder and setup logic
+│   │   └── main.rs                # Rust binary entrypoint
 │   ├── Cargo.toml                 # Rust dependencies & metadata
 │   ├── tauri.conf.json            # Tauri v2 application configuration
 │   └── capabilities/              # Tauri v2 security capabilities
+├── docs/                          # Project documentation & references
+│   └── external-references/       # Topic-specific research & technical references
 ├── public/                        # Static assets, logos, and tray icons
 ├── releases/                      # Compiled desktop installers (gitignored)
 ├── package.json                   # Frontend dependencies and npm scripts
@@ -77,6 +89,9 @@ npx tauri dev
 ```powershell
 # Run Svelte and TypeScript type check
 npm run check
+
+# Run Rust backend tests
+cd src-tauri; cargo test; cd ..
 
 # Build production frontend
 npm run build

@@ -12,7 +12,7 @@
 ---
 
 <a name="english"></a>
-## 🇬🇧 English
+## English
 
 ### 1. Project Description
 **Worktree & Workspace Companion** is an ultra-lightweight, native system tray utility and Spotlight-style floating dashboard for Windows designed to streamline developer workflows with Git Worktrees and multi-account GitHub CLI setups.
@@ -75,7 +75,7 @@ npm run build
 ---
 
 <a name="español"></a>
-## 🇪🇸 Español
+## Español
 
 ### 1. Descripción del Proyecto
 **Worktree & Workspace Companion** es una micro-herramienta nativa y ultra-ligera residente en la bandeja del sistema (*System Tray*) de Windows con ventana flotante estilo Spotlight, diseñada para potenciar la productividad gestionando Git Worktrees y múltiples cuentas de GitHub CLI.
