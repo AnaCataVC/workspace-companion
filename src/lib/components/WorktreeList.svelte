@@ -1,8 +1,10 @@
 <script lang="ts">
   import { scannedRepos, searchFilter } from '../stores/worktrees';
-  import { selectedAccountFilter } from '../stores/appConfig';
+  import { selectedAccountFilter, viewDensity } from '../stores/appConfig';
   import { activeGhAccount } from '../stores/ghAuth';
   import WorktreeCard from './WorktreeCard.svelte';
+  import WorktreeItemRow from './WorktreeItemRow.svelte';
+  import QuickWorktreeInline from './QuickWorktreeInline.svelte';
   import type { RepositoryWorktrees, WorktreeInfo, SupportedEditor } from '../types';
   import { FolderGit2, Sparkles, Inbox, Plus, Github, Zap, Settings2 } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
@@ -16,6 +18,7 @@
     newWorktreeForRepo: string; // repoPath
     switchGhAccount: string; // username
     openSettings: void;
+    worktreeCreated: { worktreePath: string; branchName: string };
   }>();
 
   $: filteredRepos = $scannedRepos
@@ -40,6 +43,14 @@
       };
     })
     .filter(repo => repo.worktrees.length > 0);
+
+  function getAnchorBranchName(repo: RepositoryWorktrees): string {
+    const mainWt = repo.worktrees.find(w => w.isMain) || repo.worktrees[0];
+    if (mainWt?.branch) {
+      return mainWt.branch.replace('refs/heads/', '');
+    }
+    return 'main';
+  }
 </script>
 
 <div class="flex-1 overflow-y-auto p-3 space-y-4">
@@ -73,12 +84,14 @@
     {#each filteredRepos as repo (repo.repoPath)}
       {@const orphanCount = repo.worktrees.filter(w => w.isOrphaned).length}
       {@const isDifferentAccount = repo.associatedAccount && $activeGhAccount && repo.associatedAccount !== $activeGhAccount}
-      <div class="space-y-2">
+      {@const anchorBranch = getAnchorBranchName(repo)}
+      
+      <div class="space-y-1.5 bg-neutral-950/40 border border-neutral-850 rounded-lg p-2.5">
         <!-- Repository Header -->
-        <div class="flex items-center justify-between px-1">
+        <div class="flex items-center justify-between px-1 mb-1">
           <div class="flex items-center gap-1.5 min-w-0">
-            <FolderGit2 size={13} class="text-neutral-400 flex-shrink-0" />
-            <span class="text-xs font-medium text-neutral-300 truncate" title={repo.repoPath}>
+            <FolderGit2 size={13} class="text-indigo-400 flex-shrink-0" />
+            <span class="text-xs font-semibold text-neutral-200 truncate" title={repo.repoPath}>
               {repo.repoName}
             </span>
 
@@ -111,17 +124,9 @@
           </div>
 
           <div class="flex items-center gap-1.5">
-            <button
-              on:click={() => dispatch('newWorktreeForRepo', repo.repoPath)}
-              title="Create new worktree for this repository"
-              class="flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-[10px] transition-colors"
-            >
-              <Plus size={10} />
-              <span>Worktree</span>
-            </button>
-
             {#if orphanCount > 0}
               <button
+                type="button"
                 on:click={() => dispatch('cleanAllOrphans', repo.repoPath)}
                 class="flex items-center gap-1 px-2 py-0.5 rounded bg-amber-950/60 hover:bg-amber-900/80 text-amber-300 border border-amber-800/40 text-[10px] transition-colors"
               >
@@ -132,19 +137,44 @@
           </div>
         </div>
 
-        <!-- Worktrees grid/cards -->
-        <div class="grid grid-cols-1 gap-2">
-          {#each repo.worktrees as wt (wt.path)}
-            <WorktreeCard
-              worktree={wt}
-              repoPath={repo.repoPath}
-              on:openPath={(e) => dispatch('openPath', e.detail)}
-              on:openEditor={(e) => dispatch('openEditor', e.detail)}
-              on:requestSwitchBranch={(e) => dispatch('requestSwitchBranch', e.detail)}
-              on:requestDelete={(e) => dispatch('requestDelete', { worktree: e.detail, repoPath: repo.repoPath })}
-            />
-          {/each}
-        </div>
+        <!-- Worktrees Presentation (Compact Hierarchy vs Detailed Cards) -->
+        {#if $viewDensity === 'compact'}
+          <div class="flex flex-col gap-1">
+            {#each repo.worktrees as wt, idx (wt.path)}
+              <WorktreeItemRow
+                worktree={wt}
+                repoPath={repo.repoPath}
+                isLast={idx === repo.worktrees.length - 1}
+                on:openPath={(e) => dispatch('openPath', e.detail)}
+                on:openEditor={(e) => dispatch('openEditor', e.detail)}
+                on:requestSwitchBranch={(e) => dispatch('requestSwitchBranch', e.detail)}
+                on:requestDelete={(e) => dispatch('requestDelete', { worktree: e.detail, repoPath: repo.repoPath })}
+              />
+            {/each}
+          </div>
+        {:else}
+          <div class="grid grid-cols-1 gap-2">
+            {#each repo.worktrees as wt (wt.path)}
+              <WorktreeCard
+                worktree={wt}
+                repoPath={repo.repoPath}
+                on:openPath={(e) => dispatch('openPath', e.detail)}
+                on:openEditor={(e) => dispatch('openEditor', e.detail)}
+                on:requestSwitchBranch={(e) => dispatch('requestSwitchBranch', e.detail)}
+                on:requestDelete={(e) => dispatch('requestDelete', { worktree: e.detail, repoPath: repo.repoPath })}
+              />
+            {/each}
+          </div>
+        {/if}
+
+        <!-- Quick Inline Worktree Creator -->
+        <QuickWorktreeInline
+          repoPath={repo.repoPath}
+          defaultBranch={anchorBranch}
+          on:openAdvancedModal={(e) => dispatch('newWorktreeForRepo', e.detail)}
+          on:openEditor={(e) => dispatch('openEditor', e.detail)}
+          on:worktreeCreated={(e) => dispatch('worktreeCreated', e.detail)}
+        />
       </div>
     {/each}
   {/if}

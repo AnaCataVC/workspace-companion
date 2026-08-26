@@ -1,9 +1,16 @@
 use crate::services::config::{AppConfig, ConfigService};
 use crate::services::git::{
     CheckoutBranchResult, CreateWorktreeResult, EditorInfo, GitService, SuggestWorktreePathResult,
-    WorktreeBranchesResponse,
+    WorktreeBranchesResponse, WorktreeDiffSummary,
 };
 use crate::services::worktree_cleaner::WorktreeCleanerService;
+
+#[tauri::command]
+pub async fn get_worktree_diff_summary(
+    worktree_path: String,
+) -> Result<WorktreeDiffSummary, String> {
+    GitService::get_diff_summary(&worktree_path)
+}
 
 #[tauri::command]
 pub async fn get_app_config() -> Result<AppConfig, String> {

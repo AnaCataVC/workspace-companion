@@ -1,3 +1,5 @@
+export type ViewDensity = 'compact' | 'detailed';
+
 export interface WorktreeInfo {
   path: string;
   head: string;
@@ -5,6 +7,7 @@ export interface WorktreeInfo {
   bare: boolean;
   locked: string | null;
   prunable: string | null;
+  isMain?: boolean;
   isOrphaned: boolean;
   orphanReason?: string;
   isDirty?: boolean;
@@ -12,6 +15,14 @@ export interface WorktreeInfo {
   lastCommitMessage?: string;
   lastCommitAuthor?: string;
   lastCommitDate?: string;
+}
+
+export interface WorktreeDiffSummary {
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+  summaryText: string;
+  modifiedFiles: string[];
 }
 
 export interface RepositoryWorktrees {

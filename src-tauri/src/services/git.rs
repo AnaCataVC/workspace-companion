@@ -17,6 +17,8 @@ pub struct WorktreeEntry {
     pub bare: bool,
     pub locked: Option<String>,
     pub prunable: Option<String>,
+    #[serde(rename = "isMain")]
+    pub is_main: bool,
     #[serde(rename = "isOrphaned")]
     pub is_orphaned: bool,
     #[serde(rename = "orphanReason")]
@@ -31,6 +33,16 @@ pub struct WorktreeEntry {
     pub last_commit_author: Option<String>,
     #[serde(rename = "lastCommitDate")]
     pub last_commit_date: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeDiffSummary {
+    pub files_changed: usize,
+    pub insertions: usize,
+    pub deletions: usize,
+    pub summary_text: String,
+    pub modified_files: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,6 +156,7 @@ impl GitService {
                         bare: current_bare,
                         locked: current_locked.take(),
                         prunable: current_prunable.take(),
+                        is_main: false,
                         is_orphaned: false,
                         orphan_reason: None,
                         is_dirty: false,
@@ -183,6 +196,7 @@ impl GitService {
                 bare: current_bare,
                 locked: current_locked.take(),
                 prunable: current_prunable.take(),
+                is_main: false,
                 is_orphaned: false,
                 orphan_reason: None,
                 is_dirty: false,
@@ -194,6 +208,68 @@ impl GitService {
         }
 
         entries
+    }
+
+    /// Fetches on-demand git diff summary and modified file list for popover previews without overhead.
+    pub fn get_diff_summary<P: AsRef<Path>>(worktree_path: P) -> Result<WorktreeDiffSummary, String> {
+        let wt = worktree_path.as_ref();
+        if !wt.exists() {
+            return Err(format!("Worktree path does not exist: {}", wt.display()));
+        }
+
+        let mut modified_files = Vec::new();
+        if let Ok(status_out) = Self::run_git(wt, &["status", "--porcelain=v1"]) {
+            for line in status_out.lines().take(20) {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    modified_files.push(trimmed.to_string());
+                }
+            }
+        }
+
+        let shortstat = Self::run_git(wt, &["diff", "--shortstat"]).unwrap_or_default();
+        let mut files_changed = 0;
+        let mut insertions = 0;
+        let mut deletions = 0;
+
+        for part in shortstat.split(',') {
+            let p = part.trim();
+            if p.contains("file changed") || p.contains("files changed") {
+                if let Some(num_str) = p.split_whitespace().next() {
+                    files_changed = num_str.parse().unwrap_or(0);
+                }
+            } else if p.contains("insertion") {
+                if let Some(num_str) = p.split_whitespace().next() {
+                    insertions = num_str.parse().unwrap_or(0);
+                }
+            } else if p.contains("deletion") {
+                if let Some(num_str) = p.split_whitespace().next() {
+                    deletions = num_str.parse().unwrap_or(0);
+                }
+            }
+        }
+
+        if files_changed == 0 && !modified_files.is_empty() {
+            files_changed = modified_files.len();
+        }
+
+        let summary_text = if shortstat.is_empty() {
+            if modified_files.is_empty() {
+                "Clean working tree".to_string()
+            } else {
+                format!("{} modified/untracked files", modified_files.len())
+            }
+        } else {
+            shortstat
+        };
+
+        Ok(WorktreeDiffSummary {
+            files_changed,
+            insertions,
+            deletions,
+            summary_text,
+            modified_files,
+        })
     }
 
     /// Checks if a worktree directory has uncommitted or untracked changes (`git status --porcelain`).

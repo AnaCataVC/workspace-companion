@@ -164,6 +164,11 @@ impl WorktreeCleanerService {
 
         let mut worktrees = GitService::parse_worktree_porcelain(&raw_worktrees);
 
+        // Mark the root/main worktree (index 0 of git worktree list --porcelain)
+        if let Some(first) = worktrees.first_mut() {
+            first.is_main = true;
+        }
+
         // Enrich each worktree with dirty status, orphan status, and commit info
         for wt in &mut worktrees {
             let wt_path = Path::new(&wt.path);

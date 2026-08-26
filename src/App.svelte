@@ -462,6 +462,7 @@
     on:openSettings={() => (isSettingsModalOpen = true)}
     on:requestDelete={handleRequestDelete}
     on:cleanAllOrphans={handleCleanAllOrphans}
+    on:worktreeCreated={refreshWorktrees}
   />
 
   <WatchFoldersModal

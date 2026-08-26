@@ -1,7 +1,8 @@
 <script lang="ts">
   import { isScanning, isPinned, searchFilter } from '../stores/worktrees';
   import { activeGhAccount } from '../stores/ghAuth';
-  import { RefreshCw, Pin, PinOff, Github, Search, Plus, Settings2 } from 'lucide-svelte';
+  import { viewDensity } from '../stores/appConfig';
+  import { RefreshCw, Pin, PinOff, Github, Search, Plus, Settings2, LayoutList, LayoutGrid } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
 
   export let onRefresh: () => void;
@@ -13,6 +14,10 @@
 
   function togglePin() {
     isPinned.update(p => !p);
+  }
+
+  function toggleDensity() {
+    viewDensity.update(d => (d === 'compact' ? 'detailed' : 'compact'));
   }
 </script>
 
@@ -26,6 +31,20 @@
     </div>
 
     <div class="flex items-center gap-1.5">
+      <!-- View Density Toggle -->
+      <button
+        type="button"
+        on:click={toggleDensity}
+        title={$viewDensity === 'compact' ? "Switch to Detailed Cards view" : "Switch to Compact Tree view"}
+        class="p-1.5 rounded-md hover:bg-neutral-800 text-neutral-400 hover:text-indigo-300 transition-colors"
+      >
+        {#if $viewDensity === 'compact'}
+          <LayoutList size={14} class="text-indigo-400" />
+        {:else}
+          <LayoutGrid size={14} class="text-neutral-400" />
+        {/if}
+      </button>
+
       <!-- New Worktree Button -->
       <button
         on:click={onOpenNewWorktreeModal}
