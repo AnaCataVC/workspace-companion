@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import Header from './lib/components/Header.svelte';
   import AccountFilterBar from './lib/components/AccountFilterBar.svelte';
   import WorktreeList from './lib/components/WorktreeList.svelte';
@@ -149,42 +149,12 @@
     scanError.set(null);
     scannedRepos.set([]);
 
-    let unlistenRepo: (() => void) | null = null;
-    let unlistenDone: (() => void) | null = null;
-
-    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-      try {
-        const { listen } = await import('@tauri-apps/api/event');
-        unlistenRepo = await listen<RepositoryWorktrees>('repo-scanned', (event) => {
-          scannedRepos.update((repos) => {
-            const existingIndex = repos.findIndex((r) => r.repoPath === event.payload.repoPath);
-            if (existingIndex >= 0) {
-              const updated = [...repos];
-              updated[existingIndex] = event.payload;
-              return updated;
-            }
-            return [...repos, event.payload];
-          });
-        });
-
-        unlistenDone = await listen('scan-complete', () => {
-          isScanning.set(false);
-          if (unlistenRepo) unlistenRepo();
-          if (unlistenDone) unlistenDone();
-        });
-      } catch (err) {
-        console.error('Failed to setup scan event listeners:', err);
-      }
-    }
-
     try {
       await invokeTauri('scan_worktrees');
     } catch (err: any) {
       console.error('Failed to scan worktrees:', err);
       scanError.set(err?.toString() || 'Failed to scan worktrees');
       isScanning.set(false);
-      if (unlistenRepo) unlistenRepo();
-      if (unlistenDone) unlistenDone();
     }
   }
 
@@ -417,11 +387,53 @@
     }
   }
 
+  // Sync window AlwaysOnTop with isPinned store
+  $: {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+        getCurrentWindow().setAlwaysOnTop($isPinned).catch((err) => {
+          console.warn('Failed to update window alwaysOnTop:', err);
+        });
+      });
+    }
+  }
+
+  let unlistenRepo: (() => void) | null = null;
+  let unlistenDone: (() => void) | null = null;
+
   onMount(async () => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        unlistenRepo = await listen<RepositoryWorktrees>('repo-scanned', (event) => {
+          scannedRepos.update((repos) => {
+            const existingIndex = repos.findIndex((r) => r.repoPath === event.payload.repoPath);
+            if (existingIndex >= 0) {
+              const updated = [...repos];
+              updated[existingIndex] = event.payload;
+              return updated;
+            }
+            return [...repos, event.payload];
+          });
+        });
+
+        unlistenDone = await listen('scan-complete', () => {
+          isScanning.set(false);
+        });
+      } catch (err) {
+        console.error('Failed to setup scan event listeners:', err);
+      }
+    }
+
     await loadAppConfig();
     refreshInstalledEditors();
     refreshWorktrees();
     refreshGhAccounts();
+  });
+
+  onDestroy(() => {
+    if (unlistenRepo) unlistenRepo();
+    if (unlistenDone) unlistenDone();
   });
 </script>
 

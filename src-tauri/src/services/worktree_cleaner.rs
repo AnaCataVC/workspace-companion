@@ -237,3 +237,33 @@ impl WorktreeCleanerService {
         GitService::run_git(repo_path.as_ref(), &["worktree", "prune"])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_ignored_directories_contains_common_folders() {
+        assert!(IGNORED_DIRECTORIES.contains(&"node_modules"));
+        assert!(IGNORED_DIRECTORIES.contains(&"target"));
+        assert!(IGNORED_DIRECTORIES.contains(&".venv"));
+        assert!(IGNORED_DIRECTORIES.contains(&"dist"));
+    }
+
+    #[test]
+    fn test_is_git_repo_detection() {
+        let temp_dir = std::env::temp_dir().join("wt_cleaner_test_repo");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        assert!(!WorktreeCleanerService::is_git_repo(&temp_dir));
+
+        // Create .git folder
+        let git_dir = temp_dir.join(".git");
+        fs::create_dir_all(&git_dir).unwrap();
+        assert!(WorktreeCleanerService::is_git_repo(&temp_dir));
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+}

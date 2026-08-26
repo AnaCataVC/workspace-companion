@@ -44,11 +44,6 @@ export interface GhAccount {
   host: string;
 }
 
-export interface ScanResult {
-  repositories: RepositoryWorktrees[];
-  totalWorktrees: number;
-  totalOrphaned: number;
-}
 
 export type SupportedEditor = 'antigravity' | 'vscode' | 'cursor' | 'windsurf' | 'explorer' | 'wt';
 

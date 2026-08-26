@@ -9,4 +9,3 @@ export const appConfig = writable<AppConfig>({
 });
 
 export const selectedAccountFilter = writable<string>('ALL');
-export const isSettingsModalOpen = writable<boolean>(false);
