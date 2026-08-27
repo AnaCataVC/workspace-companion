@@ -1,12 +1,13 @@
 <script lang="ts">
   import { scannedRepos, searchFilter } from '../stores/worktrees';
-  import { selectedAccountFilter, viewDensity } from '../stores/appConfig';
+  import { selectedAccountFilter, selectedStatusFilter, viewDensity } from '../stores/appConfig';
   import { activeGhAccount } from '../stores/ghAuth';
+  import { batchSelection, selectedPaths } from '../stores/batchSelection';
   import WorktreeCard from './WorktreeCard.svelte';
   import WorktreeItemRow from './WorktreeItemRow.svelte';
   import QuickWorktreeInline from './QuickWorktreeInline.svelte';
-  import type { RepositoryWorktrees, WorktreeInfo, SupportedEditor } from '../types';
-  import { FolderGit2, Sparkles, Inbox, Plus, Github, Zap, Settings2 } from 'lucide-svelte';
+  import type { RepositoryWorktrees, WorktreeInfo, SupportedEditor, BatchDeleteTarget } from '../types';
+  import { FolderGit2, Sparkles, Inbox, Plus, Github, Zap, Settings2, CheckSquare, Square } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
 
   const dispatch = createEventDispatcher<{
@@ -21,21 +22,42 @@
     worktreeCreated: { worktreePath: string; branchName: string };
   }>();
 
+  // High-performance single-pass combined filter
   $: filteredRepos = $scannedRepos
     .filter(repo => {
-      if ($selectedAccountFilter === 'ALL') return true;
-      if ($selectedAccountFilter === 'UNASSIGNED') return !repo.associatedAccount;
-      return repo.associatedAccount === $selectedAccountFilter;
+      // 1. Account filter
+      if ($selectedAccountFilter === 'UNASSIGNED') {
+        if (repo.associatedAccount) return false;
+      } else if ($selectedAccountFilter !== 'ALL') {
+        if (repo.associatedAccount !== $selectedAccountFilter) return false;
+      }
+
+      // 2. Multi-WT filter at repository level
+      if ($selectedStatusFilter === 'MULTI_WT' && repo.worktrees.length <= 1) {
+        return false;
+      }
+
+      return true;
     })
     .map(repo => {
       const q = $searchFilter.toLowerCase().trim();
-      if (!q) return repo;
+      const status = $selectedStatusFilter;
 
-      const matchedWorktrees = repo.worktrees.filter(wt => 
-        (wt.branch && wt.branch.toLowerCase().includes(q)) ||
-        wt.path.toLowerCase().includes(q) ||
-        (wt.lastCommitMessage && wt.lastCommitMessage.toLowerCase().includes(q))
-      );
+      // Filter worktrees inside the repository based on status and search query
+      const matchedWorktrees = repo.worktrees.filter(wt => {
+        // Status filter for worktrees
+        if (status === 'DIRTY' && !wt.isDirty) return false;
+        if (status === 'ORPHANS' && !wt.isOrphaned) return false;
+        if (status === 'CLEAN' && wt.isDirty) return false;
+
+        // Text query search
+        if (!q) return true;
+        return (
+          (wt.branch && wt.branch.toLowerCase().includes(q)) ||
+          wt.path.toLowerCase().includes(q) ||
+          (wt.lastCommitMessage && wt.lastCommitMessage.toLowerCase().includes(q))
+        );
+      });
 
       return {
         ...repo,
@@ -50,6 +72,37 @@
       return mainWt.branch.replace('refs/heads/', '');
     }
     return 'main';
+  }
+
+  function getSecondaryWorktrees(repo: RepositoryWorktrees): WorktreeInfo[] {
+    return repo.worktrees.filter(w => !w.isMain);
+  }
+
+  function isRepoAllSelected(repo: RepositoryWorktrees): boolean {
+    const secondaries = getSecondaryWorktrees(repo);
+    if (secondaries.length === 0) return false;
+    return secondaries.every(w => $selectedPaths.has(w.path));
+  }
+
+  function toggleSelectRepo(repo: RepositoryWorktrees) {
+    const secondaries = getSecondaryWorktrees(repo);
+    if (secondaries.length === 0) return;
+
+    const allSelected = isRepoAllSelected(repo);
+    if (allSelected) {
+      batchSelection.deselectRepo(secondaries.map(w => w.path));
+    } else {
+      const targets: BatchDeleteTarget[] = secondaries.map(w => ({
+        repoPath: repo.repoPath,
+        repoName: repo.repoName,
+        worktreePath: w.path,
+        force: false,
+        branch: w.branch,
+        isDirty: w.isDirty,
+        uncommittedFilesCount: w.uncommittedFilesCount
+      }));
+      batchSelection.selectRepo(targets);
+    }
   }
 </script>
 
@@ -85,6 +138,8 @@
       {@const orphanCount = repo.worktrees.filter(w => w.isOrphaned).length}
       {@const isDifferentAccount = repo.associatedAccount && $activeGhAccount && repo.associatedAccount !== $activeGhAccount}
       {@const anchorBranch = getAnchorBranchName(repo)}
+      {@const secondaries = getSecondaryWorktrees(repo)}
+      {@const allSelected = isRepoAllSelected(repo)}
       
       <div class="space-y-1.5 bg-neutral-950/40 border border-neutral-850 rounded-lg p-2.5">
         <!-- Repository Header -->
@@ -124,6 +179,27 @@
           </div>
 
           <div class="flex items-center gap-1.5">
+            <!-- Select All Secondaries in Repo -->
+            {#if secondaries.length > 0}
+              <button
+                type="button"
+                on:click={() => toggleSelectRepo(repo)}
+                title={allSelected ? "Deselect all secondary worktrees in this repo" : "Select all secondary worktrees in this repo"}
+                class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors
+                  {allSelected
+                    ? 'bg-rose-950/60 text-rose-300 border border-rose-800/50 hover:bg-rose-900/70'
+                    : 'bg-neutral-850 hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 border border-neutral-750'}"
+              >
+                {#if allSelected}
+                  <CheckSquare size={11} class="text-rose-400" />
+                  <span>Deselect All</span>
+                {:else}
+                  <Square size={11} />
+                  <span>Select All ({secondaries.length})</span>
+                {/if}
+              </button>
+            {/if}
+
             {#if orphanCount > 0}
               <button
                 type="button"
@@ -144,6 +220,7 @@
               <WorktreeItemRow
                 worktree={wt}
                 repoPath={repo.repoPath}
+                repoName={repo.repoName}
                 isLast={idx === repo.worktrees.length - 1}
                 on:openPath={(e) => dispatch('openPath', e.detail)}
                 on:openEditor={(e) => dispatch('openEditor', e.detail)}
@@ -158,6 +235,7 @@
               <WorktreeCard
                 worktree={wt}
                 repoPath={repo.repoPath}
+                repoName={repo.repoName}
                 on:openPath={(e) => dispatch('openPath', e.detail)}
                 on:openEditor={(e) => dispatch('openEditor', e.detail)}
                 on:requestSwitchBranch={(e) => dispatch('requestSwitchBranch', e.detail)}

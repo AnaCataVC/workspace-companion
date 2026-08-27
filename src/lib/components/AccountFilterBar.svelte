@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { selectedAccountFilter } from '../stores/appConfig';
+  import { selectedAccountFilter, selectedStatusFilter } from '../stores/appConfig';
   import { scannedRepos } from '../stores/worktrees';
   import { ghAccounts } from '../stores/ghAuth';
-  import { Github, Layers } from 'lucide-svelte';
+  import type { StatusFilterType } from '../types';
+  import { Github, Layers, Flame, GitFork, AlertTriangle, CheckCircle2 } from 'lucide-svelte';
 
   $: allCount = $scannedRepos.length;
 
@@ -19,60 +20,193 @@
   }
 
   $: unassignedCount = $scannedRepos.filter(r => !r.associatedAccount).length;
+
+  // Single-pass O(N) calculation for status filter counts within the selected account scope
+  $: statusCounts = (() => {
+    let all = 0;
+    let dirty = 0;
+    let multiWt = 0;
+    let orphans = 0;
+    let clean = 0;
+
+    const targetAccount = $selectedAccountFilter;
+    const repos = $scannedRepos;
+
+    for (let i = 0; i < repos.length; i++) {
+      const repo = repos[i];
+      if (targetAccount !== 'ALL') {
+        if (targetAccount === 'UNASSIGNED' && repo.associatedAccount) continue;
+        if (targetAccount !== 'UNASSIGNED' && repo.associatedAccount !== targetAccount) continue;
+      }
+
+      all++;
+      if (repo.worktrees.length > 1) {
+        multiWt++;
+      }
+
+      let repoHasDirty = false;
+      let repoHasOrphan = false;
+
+      for (let j = 0; j < repo.worktrees.length; j++) {
+        const wt = repo.worktrees[j];
+        if (wt.isDirty) repoHasDirty = true;
+        if (wt.isOrphaned) repoHasOrphan = true;
+      }
+
+      if (repoHasDirty) dirty++;
+      else clean++;
+      if (repoHasOrphan) orphans++;
+    }
+
+    return { all, dirty, multiWt, orphans, clean };
+  })();
+
+  function setStatusFilter(filter: StatusFilterType) {
+    selectedStatusFilter.set(filter);
+  }
 </script>
 
-{#if accounts.length > 0 || unassignedCount > 0}
-  <div class="px-3 py-1.5 bg-neutral-950/60 border-b border-neutral-800 flex items-center gap-1.5 overflow-x-auto text-[11px] no-scrollbar">
-    <!-- All Repositories Pill -->
+<div class="flex flex-col border-b border-neutral-800/80 bg-neutral-950/70 select-none">
+  <!-- Top Row: GitHub Account Pills (if accounts exist) -->
+  {#if accounts.length > 0 || unassignedCount > 0}
+    <div class="px-3 py-1.5 border-b border-neutral-850/60 flex items-center gap-1.5 overflow-x-auto text-[11px] no-scrollbar">
+      <!-- All Repositories Pill -->
+      <button
+        type="button"
+        on:click={() => selectedAccountFilter.set('ALL')}
+        class="flex items-center gap-1.5 px-2 py-0.5 rounded font-medium transition-all flex-shrink-0
+          {$selectedAccountFilter === 'ALL'
+            ? 'bg-neutral-800 text-neutral-100 border border-neutral-700 shadow-xs'
+            : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900 border border-transparent'}"
+      >
+        <Layers size={11} />
+        <span>All Accounts</span>
+        <span class="px-1.5 py-0.2 rounded-full bg-neutral-900 text-[10px] font-mono text-neutral-400">
+          {allCount}
+        </span>
+      </button>
+
+      <!-- Account Specific Pills -->
+      {#each accounts as acc (acc)}
+        {@const count = getCountForAccount(acc)}
+        <button
+          type="button"
+          on:click={() => selectedAccountFilter.set(acc)}
+          class="flex items-center gap-1.5 px-2 py-0.5 rounded font-medium transition-all flex-shrink-0
+            {$selectedAccountFilter === acc
+              ? 'bg-indigo-950/80 text-indigo-200 border border-indigo-700/60 shadow-xs'
+              : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900 border border-transparent'}"
+        >
+          <Github size={11} class={$selectedAccountFilter === acc ? 'text-indigo-400' : 'text-neutral-500'} />
+          <span class="font-mono text-[10px]">@{acc}</span>
+          <span class="px-1.5 py-0.2 rounded-full bg-neutral-900/80 text-[10px] font-mono {$selectedAccountFilter === acc ? 'text-indigo-300' : 'text-neutral-500'}">
+            {count}
+          </span>
+        </button>
+      {/each}
+
+      <!-- Unassigned Pill -->
+      {#if unassignedCount > 0 && accounts.length > 0}
+        <button
+          type="button"
+          on:click={() => selectedAccountFilter.set('UNASSIGNED')}
+          class="flex items-center gap-1.5 px-2 py-0.5 rounded font-medium transition-all flex-shrink-0
+            {$selectedAccountFilter === 'UNASSIGNED'
+              ? 'bg-neutral-800 text-neutral-200 border border-neutral-700 shadow-xs'
+              : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900 border border-transparent'}"
+        >
+          <span>Unassigned</span>
+          <span class="px-1.5 py-0.2 rounded-full bg-neutral-900 text-[10px] font-mono text-neutral-500">
+            {unassignedCount}
+          </span>
+        </button>
+      {/if}
+    </div>
+  {/if}
+
+  <!-- Bottom Row: Smart Status Filter Chips -->
+  <div class="px-3 py-1 flex items-center gap-1.5 overflow-x-auto text-[11px] no-scrollbar">
+    <!-- All Status Chip -->
     <button
       type="button"
-      on:click={() => selectedAccountFilter.set('ALL')}
-      class="flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium transition-all flex-shrink-0
-        {$selectedAccountFilter === 'ALL'
-          ? 'bg-neutral-800 text-neutral-100 border border-neutral-700 shadow-xs'
-          : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900 border border-transparent'}"
+      on:click={() => setStatusFilter('ALL')}
+      class="flex items-center gap-1 px-2 py-0.5 rounded-md font-medium transition-all flex-shrink-0
+        {$selectedStatusFilter === 'ALL'
+          ? 'bg-neutral-800 text-neutral-200 border border-neutral-700 shadow-xs'
+          : 'text-neutral-400 hover:text-neutral-300 hover:bg-neutral-900/80 border border-transparent'}"
     >
-      <Layers size={11} />
-      <span>All</span>
+      <span>All Repos</span>
       <span class="px-1.5 py-0.2 rounded-full bg-neutral-900 text-[10px] font-mono text-neutral-400">
-        {allCount}
+        {statusCounts.all}
       </span>
     </button>
 
-    <!-- Account Specific Pills -->
-    {#each accounts as acc (acc)}
-      {@const count = getCountForAccount(acc)}
-      <button
-        type="button"
-        on:click={() => selectedAccountFilter.set(acc)}
-        class="flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium transition-all flex-shrink-0
-          {$selectedAccountFilter === acc
-            ? 'bg-indigo-950/80 text-indigo-200 border border-indigo-700/60 shadow-xs'
-            : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900 border border-transparent'}"
-      >
-        <Github size={11} class={$selectedAccountFilter === acc ? 'text-indigo-400' : 'text-neutral-500'} />
-        <span class="font-mono text-[10px]">@{acc}</span>
-        <span class="px-1.5 py-0.2 rounded-full bg-neutral-900/80 text-[10px] font-mono {$selectedAccountFilter === acc ? 'text-indigo-300' : 'text-neutral-500'}">
-          {count}
-        </span>
-      </button>
-    {/each}
+    <!-- Dirty Chip -->
+    <button
+      type="button"
+      on:click={() => setStatusFilter('DIRTY')}
+      title="Filter repositories with uncommitted changes"
+      class="flex items-center gap-1 px-2 py-0.5 rounded-md font-medium transition-all flex-shrink-0
+        {$selectedStatusFilter === 'DIRTY'
+          ? 'bg-rose-950/80 text-rose-200 border border-rose-800/70 shadow-xs'
+          : 'text-neutral-400 hover:text-rose-300 hover:bg-neutral-900/80 border border-transparent'}"
+    >
+      <Flame size={11} class={$selectedStatusFilter === 'DIRTY' ? 'text-rose-400 animate-pulse' : 'text-neutral-500'} />
+      <span>Dirty</span>
+      <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono {$selectedStatusFilter === 'DIRTY' ? 'bg-rose-900/80 text-rose-200' : 'bg-neutral-900 text-neutral-400'}">
+        {statusCounts.dirty}
+      </span>
+    </button>
 
-    <!-- Unassigned Pill (Only if there are repos without account) -->
-    {#if unassignedCount > 0 && accounts.length > 0}
-      <button
-        type="button"
-        on:click={() => selectedAccountFilter.set('UNASSIGNED')}
-        class="flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium transition-all flex-shrink-0
-          {$selectedAccountFilter === 'UNASSIGNED'
-            ? 'bg-neutral-800 text-neutral-200 border border-neutral-700 shadow-xs'
-            : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900 border border-transparent'}"
-      >
-        <span>Unassigned</span>
-        <span class="px-1.5 py-0.2 rounded-full bg-neutral-900 text-[10px] font-mono text-neutral-500">
-          {unassignedCount}
-        </span>
-      </button>
-    {/if}
+    <!-- Multi-Worktree Chip -->
+    <button
+      type="button"
+      on:click={() => setStatusFilter('MULTI_WT')}
+      title="Filter repositories with more than 1 worktree"
+      class="flex items-center gap-1 px-2 py-0.5 rounded-md font-medium transition-all flex-shrink-0
+        {$selectedStatusFilter === 'MULTI_WT'
+          ? 'bg-indigo-950/80 text-indigo-200 border border-indigo-700/70 shadow-xs'
+          : 'text-neutral-400 hover:text-indigo-300 hover:bg-neutral-900/80 border border-transparent'}"
+    >
+      <GitFork size={11} class={$selectedStatusFilter === 'MULTI_WT' ? 'text-indigo-400' : 'text-neutral-500'} />
+      <span>Multi-WT</span>
+      <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono {$selectedStatusFilter === 'MULTI_WT' ? 'bg-indigo-900/80 text-indigo-200' : 'bg-neutral-900 text-neutral-400'}">
+        {statusCounts.multiWt}
+      </span>
+    </button>
+
+    <!-- Orphans Chip -->
+    <button
+      type="button"
+      on:click={() => setStatusFilter('ORPHANS')}
+      title="Filter repositories with orphaned worktrees"
+      class="flex items-center gap-1 px-2 py-0.5 rounded-md font-medium transition-all flex-shrink-0
+        {$selectedStatusFilter === 'ORPHANS'
+          ? 'bg-amber-950/80 text-amber-200 border border-amber-800/70 shadow-xs'
+          : 'text-neutral-400 hover:text-amber-300 hover:bg-neutral-900/80 border border-transparent'}"
+    >
+      <AlertTriangle size={11} class={$selectedStatusFilter === 'ORPHANS' ? 'text-amber-400' : 'text-neutral-500'} />
+      <span>Orphans</span>
+      <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono {$selectedStatusFilter === 'ORPHANS' ? 'bg-amber-900/80 text-amber-200' : 'bg-neutral-900 text-neutral-400'}">
+        {statusCounts.orphans}
+      </span>
+    </button>
+
+    <!-- Clean Chip -->
+    <button
+      type="button"
+      on:click={() => setStatusFilter('CLEAN')}
+      title="Filter repositories with no uncommitted changes"
+      class="flex items-center gap-1 px-2 py-0.5 rounded-md font-medium transition-all flex-shrink-0
+        {$selectedStatusFilter === 'CLEAN'
+          ? 'bg-emerald-950/80 text-emerald-200 border border-emerald-800/70 shadow-xs'
+          : 'text-neutral-400 hover:text-emerald-300 hover:bg-neutral-900/80 border border-transparent'}"
+    >
+      <CheckCircle2 size={11} class={$selectedStatusFilter === 'CLEAN' ? 'text-emerald-400' : 'text-neutral-500'} />
+      <span>Clean</span>
+      <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono {$selectedStatusFilter === 'CLEAN' ? 'bg-emerald-900/80 text-emerald-200' : 'bg-neutral-900 text-neutral-400'}">
+        {statusCounts.clean}
+      </span>
+    </button>
   </div>
-{/if}
+</div>

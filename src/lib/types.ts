@@ -1,5 +1,38 @@
 export type ViewDensity = 'compact' | 'detailed';
 
+export type StatusFilterType = 'ALL' | 'DIRTY' | 'MULTI_WT' | 'ORPHANS' | 'CLEAN';
+
+export interface StatusFilterCounts {
+  all: number;
+  dirty: number;
+  multiWt: number;
+  orphans: number;
+  clean: number;
+}
+
+export interface BatchDeleteTarget {
+  repoPath: string;
+  worktreePath: string;
+  force: boolean;
+  branch?: string | null;
+  isDirty?: boolean;
+  uncommittedFilesCount?: number;
+  repoName?: string;
+}
+
+export interface BatchItemError {
+  worktreePath: string;
+  error: string;
+}
+
+export interface BatchDeleteSummary {
+  totalRequested: number;
+  deletedCount: number;
+  skippedCount: number;
+  deletedPaths: string[];
+  errors: BatchItemError[];
+}
+
 export interface WorktreeInfo {
   path: string;
   head: string;

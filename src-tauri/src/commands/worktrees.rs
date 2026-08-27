@@ -3,7 +3,9 @@ use crate::services::git::{
     CheckoutBranchResult, CreateWorktreeResult, EditorInfo, GitService, SuggestWorktreePathResult,
     WorktreeBranchesResponse, WorktreeDiffSummary,
 };
-use crate::services::worktree_cleaner::WorktreeCleanerService;
+use crate::services::worktree_cleaner::{
+    BatchDeleteSummary, BatchDeleteTarget, WorktreeCleanerService,
+};
 
 #[tauri::command]
 pub async fn get_worktree_diff_summary(
@@ -51,7 +53,6 @@ pub async fn scan_worktrees(app: AppHandle) -> Result<(), String> {
     .map_err(|e| e.to_string())
 }
 
-
 #[tauri::command]
 pub async fn remove_worktree(
     repo_path: String,
@@ -59,6 +60,17 @@ pub async fn remove_worktree(
     force: bool,
 ) -> Result<String, String> {
     WorktreeCleanerService::remove_worktree(&repo_path, &worktree_path, force)
+}
+
+#[tauri::command]
+pub async fn remove_worktrees_batch(
+    targets: Vec<BatchDeleteTarget>,
+) -> Result<BatchDeleteSummary, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        WorktreeCleanerService::remove_worktrees_batch(targets)
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

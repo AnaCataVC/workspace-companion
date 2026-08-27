@@ -14,10 +14,12 @@
     Bot
   } from 'lucide-svelte';
   import { installedEditors } from '../stores/editors';
+  import { batchSelection, selectedPaths } from '../stores/batchSelection';
   import { createEventDispatcher, onMount } from 'svelte';
 
   export let worktree: WorktreeInfo;
   export let repoPath: string = '';
+  export let repoName: string = '';
 
   const dispatch = createEventDispatcher<{
     openPath: string;
@@ -28,6 +30,21 @@
 
   let isEditorMenuOpen = false;
   let preferredEditor: SupportedEditor = 'antigravity';
+
+  $: isSelected = $selectedPaths.has(worktree.path);
+
+  function toggleSelection() {
+    if (worktree.isMain) return;
+    batchSelection.toggle({
+      repoPath,
+      repoName: repoName || getDirectoryName(repoPath),
+      worktreePath: worktree.path,
+      force: false,
+      branch: worktree.branch,
+      isDirty: worktree.isDirty,
+      uncommittedFilesCount: worktree.uncommittedFilesCount
+    });
+  }
 
   function checkAvailable(id: SupportedEditor): boolean {
     const found = $installedEditors.find(e => e.id === id);
@@ -73,10 +90,27 @@
   }
 </script>
 
-<div class="group relative rounded-lg bg-neutral-900/90 hover:bg-neutral-850 border border-neutral-800/80 hover:border-neutral-700 p-2.5 transition-all text-xs flex flex-col gap-1.5 shadow-sm">
+<div class="group relative rounded-lg border p-2.5 transition-all text-xs flex flex-col gap-1.5 shadow-sm
+  {isSelected
+    ? 'bg-rose-950/30 border-rose-800/70 shadow-xs'
+    : 'bg-neutral-900/90 hover:bg-neutral-850 border-neutral-800/80 hover:border-neutral-700'}">
   <div class="flex items-center justify-between">
     <!-- Branch name & interactive switcher button -->
     <div class="flex items-center gap-1.5 min-w-0">
+      {#if !worktree.isMain}
+        <input
+          type="checkbox"
+          checked={isSelected}
+          on:change={toggleSelection}
+          title="Select worktree for batch delete"
+          class="w-3.5 h-3.5 rounded border-neutral-700 bg-neutral-950 text-rose-500 focus:ring-rose-500/30 focus:ring-offset-0 cursor-pointer flex-shrink-0"
+        />
+      {:else}
+        <span title="Main / Root Worktree is protected from batch deletion" class="w-3.5 h-3.5 flex items-center justify-center text-neutral-600 flex-shrink-0">
+          <Lock size={10} />
+        </span>
+      {/if}
+
       <button
         type="button"
         on:click={() => dispatch('requestSwitchBranch', { worktree, repoPath })}

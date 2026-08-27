@@ -18,11 +18,13 @@
     Flame
   } from 'lucide-svelte';
   import { installedEditors } from '../stores/editors';
+  import { batchSelection, selectedPaths } from '../stores/batchSelection';
   import { createEventDispatcher, onMount } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
 
   export let worktree: WorktreeInfo;
   export let repoPath: string = '';
+  export let repoName: string = '';
   export let isLast: boolean = false;
 
   const dispatch = createEventDispatcher<{
@@ -37,6 +39,21 @@
   let showDiffPopover = false;
   let diffSummary: WorktreeDiffSummary | null = null;
   let isLoadingDiff = false;
+
+  $: isSelected = $selectedPaths.has(worktree.path);
+
+  function toggleSelection() {
+    if (worktree.isMain) return;
+    batchSelection.toggle({
+      repoPath,
+      repoName: repoName || getDirectoryName(repoPath),
+      worktreePath: worktree.path,
+      force: false,
+      branch: worktree.branch,
+      isDirty: worktree.isDirty,
+      uncommittedFilesCount: worktree.uncommittedFilesCount
+    });
+  }
 
   function checkAvailable(id: SupportedEditor): boolean {
     const found = $installedEditors.find(e => e.id === id);
@@ -91,7 +108,9 @@
 <div
   role="group"
   class="group relative flex items-center justify-between px-2.5 py-1.5 rounded-md border transition-all text-xs
-    {worktree.isMain
+    {isSelected
+      ? 'bg-rose-950/30 border-rose-800/60 shadow-xs'
+      : worktree.isMain
       ? 'bg-indigo-950/20 hover:bg-indigo-950/35 border-indigo-900/40 hover:border-indigo-800/60 shadow-xs'
       : 'bg-neutral-900/60 hover:bg-neutral-850/90 border-neutral-800/60 hover:border-neutral-700/80'}"
   on:mouseenter={() => (isHovered = true)}
@@ -100,7 +119,7 @@
     showDiffPopover = false;
   }}
 >
-  <!-- Left Side: Hierarchy Connector + Branch / Name / Badges -->
+  <!-- Left Side: Hierarchy Connector + Selection Checkbox + Branch / Name / Badges -->
   <div class="flex items-center gap-2 min-w-0 flex-1">
     <!-- Visual Tree Connector -->
     <div class="flex items-center text-neutral-600 select-none flex-shrink-0 font-mono text-[11px] w-4 text-center">
@@ -114,6 +133,21 @@
         <span class="text-neutral-500 font-bold">├─</span>
       {/if}
     </div>
+
+    <!-- Batch Selection Checkbox (disabled for main) -->
+    {#if !worktree.isMain}
+      <input
+        type="checkbox"
+        checked={isSelected}
+        on:change={toggleSelection}
+        title="Select worktree for batch delete"
+        class="w-3.5 h-3.5 rounded border-neutral-700 bg-neutral-950 text-rose-500 focus:ring-rose-500/30 focus:ring-offset-0 cursor-pointer flex-shrink-0"
+      />
+    {:else}
+      <span title="Main / Root Worktree is protected from batch deletion" class="w-3.5 h-3.5 flex items-center justify-center text-neutral-600 flex-shrink-0">
+        <Lock size={10} />
+      </span>
+    {/if}
 
     <!-- Branch Button (Interactive Switcher) -->
     <button

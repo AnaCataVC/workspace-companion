@@ -8,9 +8,12 @@
   import BranchSwitcherModal from './lib/components/BranchSwitcherModal.svelte';
   import NewWorktreeModal from './lib/components/NewWorktreeModal.svelte';
   import WatchFoldersModal from './lib/components/WatchFoldersModal.svelte';
+  import BatchActionBar from './lib/components/BatchActionBar.svelte';
+  import BatchDeleteModal from './lib/components/BatchDeleteModal.svelte';
   import { scannedRepos, isScanning, isPinned, scanError } from './lib/stores/worktrees';
   import { ghAccounts, activeGhAccount, isGhLoading } from './lib/stores/ghAuth';
   import { appConfig, selectedAccountFilter } from './lib/stores/appConfig';
+  import { batchSelection, selectedWorktreeList } from './lib/stores/batchSelection';
   import { installedEditors } from './lib/stores/editors';
   import type {
     RepositoryWorktrees,
@@ -23,7 +26,9 @@
     SuggestWorktreePathResult,
     CreateWorktreeResult,
     CheckoutBranchResult,
-    AppConfig
+    AppConfig,
+    BatchDeleteTarget,
+    BatchDeleteSummary
   } from './lib/types';
 
   // Deletion state
@@ -31,6 +36,12 @@
   let selectedRepoPathForDelete: string = '';
   let isDeleteModalOpen: boolean = false;
   let isDeletingWorktree: boolean = false;
+
+  // Batch deletion state
+  let isBatchDeleteModalOpen: boolean = false;
+  let isBatchDeleting: boolean = false;
+  let batchDeleteSummary: BatchDeleteSummary | null = null;
+  let batchDeleteError: string | null = null;
 
   // GitHub account modal state
   let isGhModalOpen: boolean = false;
@@ -331,6 +342,58 @@
     }
   }
 
+  function handleOpenBatchDeleteModal() {
+    batchDeleteSummary = null;
+    batchDeleteError = null;
+    isBatchDeleteModalOpen = true;
+  }
+
+  async function handleConfirmBatchDelete(event: CustomEvent<{ targets: BatchDeleteTarget[]; force: boolean }>) {
+    const { targets } = event.detail;
+    isBatchDeleting = true;
+    batchDeleteError = null;
+
+    try {
+      const summary = await invokeTauri<BatchDeleteSummary>('remove_worktrees_batch', {
+        targets
+      });
+
+      batchDeleteSummary = summary;
+
+      // Delta Update: Evict deleted worktrees directly from $scannedRepos in memory
+      if (summary && summary.deletedPaths && summary.deletedPaths.length > 0) {
+        const deletedSet = new Set(summary.deletedPaths);
+        scannedRepos.update((repos) =>
+          repos
+            .map((repo) => ({
+              ...repo,
+              worktrees: repo.worktrees.filter((w) => !deletedSet.has(w.path))
+            }))
+            .filter((repo) => repo.worktrees.length > 0)
+        );
+
+        // Auto-prune batch selection store
+        const remainingPaths = new Set<string>();
+        for (const repo of $scannedRepos) {
+          for (const wt of repo.worktrees) {
+            remainingPaths.add(wt.path);
+          }
+        }
+        batchSelection.prune(remainingPaths);
+      }
+
+      // If all requested were deleted with zero errors, close modal and clear selection
+      if (summary && summary.errors.length === 0 && summary.skippedCount === 0) {
+        batchSelection.clear();
+        isBatchDeleteModalOpen = false;
+      }
+    } catch (err: any) {
+      batchDeleteError = err?.message || err?.toString() || 'Failed to remove worktrees';
+    } finally {
+      isBatchDeleting = false;
+    }
+  }
+
   async function handleCleanAllOrphans(event: CustomEvent<string>) {
     const repoPath = event.detail;
 
@@ -437,7 +500,7 @@
   });
 </script>
 
-<main class="w-full h-screen flex flex-col bg-neutral-900 text-neutral-100 overflow-hidden select-none">
+<main class="w-full h-screen flex flex-col bg-neutral-900 text-neutral-100 overflow-hidden select-none relative">
   <Header
     onRefresh={refreshWorktrees}
     onOpenGhModal={() => (isGhModalOpen = true)}
@@ -463,6 +526,20 @@
     on:requestDelete={handleRequestDelete}
     on:cleanAllOrphans={handleCleanAllOrphans}
     on:worktreeCreated={refreshWorktrees}
+  />
+
+  <!-- Floating Batch Action Bar -->
+  <BatchActionBar on:openBatchDeleteModal={handleOpenBatchDeleteModal} />
+
+  <!-- Batch Delete Modal -->
+  <BatchDeleteModal
+    isOpen={isBatchDeleteModalOpen}
+    targets={$selectedWorktreeList}
+    isDeleting={isBatchDeleting}
+    summary={batchDeleteSummary}
+    errorMessage={batchDeleteError}
+    on:close={() => (isBatchDeleteModalOpen = false)}
+    on:confirmDelete={handleConfirmBatchDelete}
   />
 
   <WatchFoldersModal

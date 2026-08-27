@@ -1,7 +1,8 @@
 use crate::services::config::{AppConfig, ConfigService};
 use crate::services::git::{GitService, WorktreeEntry};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
@@ -35,10 +36,37 @@ pub struct RepositoryWorktrees {
     pub worktrees: Vec<WorktreeEntry>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DiscoveredRepo {
     pub path: PathBuf,
     pub associated_account: Option<String>,
     pub watch_folder_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchDeleteTarget {
+    pub repo_path: String,
+    pub worktree_path: String,
+    pub force: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchItemError {
+    pub worktree_path: String,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchDeleteSummary {
+    pub total_requested: usize,
+    pub deleted_count: usize,
+    pub skipped_count: usize,
+    pub deleted_paths: Vec<String>,
+    pub errors: Vec<BatchItemError>,
 }
 
 pub struct WorktreeCleanerService;
@@ -237,6 +265,106 @@ impl WorktreeCleanerService {
         Ok(result)
     }
 
+    /// Removes multiple worktrees safely and efficiently across repositories.
+    /// Uses inter-repository parallelism while ensuring sequential execution per repo
+    /// to avoid .git/worktrees lock collisions, with deferred single-prune per affected repo.
+    pub fn remove_worktrees_batch(targets: Vec<BatchDeleteTarget>) -> BatchDeleteSummary {
+        let total_requested = targets.len();
+        if targets.is_empty() {
+            return BatchDeleteSummary {
+                total_requested: 0,
+                deleted_count: 0,
+                skipped_count: 0,
+                deleted_paths: Vec::new(),
+                errors: Vec::new(),
+            };
+        }
+
+        // 1. Group targets by repository path to prevent Git lock collisions
+        let mut grouped: HashMap<String, Vec<BatchDeleteTarget>> = HashMap::new();
+        for target in targets {
+            grouped
+                .entry(target.repo_path.clone())
+                .or_default()
+                .push(target);
+        }
+
+        // 2. Parallelize inter-repo with Rayon; sequential intra-repo
+        let repo_results: Vec<(Vec<String>, usize, Vec<BatchItemError>)> = grouped
+            .into_par_iter()
+            .map(|(repo_path, repo_targets)| {
+                let mut local_deleted_paths = Vec::new();
+                let mut local_skipped = 0;
+                let mut local_errors = Vec::new();
+
+                for item in repo_targets {
+                    let wt_path = Path::new(&item.worktree_path);
+
+                    // Pre-flight dirty check if force is false
+                    if !item.force {
+                        let (is_dirty, count) = GitService::check_dirty_status(wt_path);
+                        if is_dirty {
+                            local_skipped += 1;
+                            local_errors.push(BatchItemError {
+                                worktree_path: item.worktree_path.clone(),
+                                error: format!(
+                                    "Cannot remove dirty worktree: {} uncommitted files detected. Enable force delete to proceed.",
+                                    count
+                                ),
+                            });
+                            continue;
+                        }
+                    }
+
+                    // git worktree remove [--force] <path>
+                    let mut args = vec!["worktree", "remove"];
+                    if item.force {
+                        args.push("--force");
+                    }
+                    args.push(&item.worktree_path);
+
+                    match GitService::run_git(Path::new(&repo_path), &args) {
+                        Ok(_) => {
+                            local_deleted_paths.push(item.worktree_path);
+                        }
+                        Err(err) => {
+                            local_errors.push(BatchItemError {
+                                worktree_path: item.worktree_path,
+                                error: err,
+                            });
+                        }
+                    }
+                }
+
+                // 3. Deferred single prune per affected repository
+                let _ = GitService::run_git(Path::new(&repo_path), &["worktree", "prune"]);
+
+                (local_deleted_paths, local_skipped, local_errors)
+            })
+            .collect();
+
+        // 4. Consolidate results
+        let mut deleted_paths = Vec::new();
+        let mut skipped_count = 0;
+        let mut errors = Vec::new();
+
+        for (paths, skipped, mut errs) in repo_results {
+            deleted_paths.extend(paths);
+            skipped_count += skipped;
+            errors.append(&mut errs);
+        }
+
+        let deleted_count = deleted_paths.len();
+
+        BatchDeleteSummary {
+            total_requested,
+            deleted_count,
+            skipped_count,
+            deleted_paths,
+            errors,
+        }
+    }
+
     /// Prunes stale worktree administrative files.
     pub fn prune_worktrees<P: AsRef<Path>>(repo_path: P) -> Result<String, String> {
         GitService::run_git(repo_path.as_ref(), &["worktree", "prune"])
@@ -270,5 +398,15 @@ mod tests {
         assert!(WorktreeCleanerService::is_git_repo(&temp_dir));
 
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_batch_remove_empty_targets() {
+        let summary = WorktreeCleanerService::remove_worktrees_batch(Vec::new());
+        assert_eq!(summary.total_requested, 0);
+        assert_eq!(summary.deleted_count, 0);
+        assert_eq!(summary.skipped_count, 0);
+        assert!(summary.deleted_paths.is_empty());
+        assert!(summary.errors.is_empty());
     }
 }

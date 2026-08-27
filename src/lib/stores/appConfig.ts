@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import type { AppConfig, ViewDensity } from '../types';
+import type { AppConfig, ViewDensity, StatusFilterType } from '../types';
 
 export const appConfig = writable<AppConfig>({
   version: 1,
@@ -9,6 +9,7 @@ export const appConfig = writable<AppConfig>({
 });
 
 export const selectedAccountFilter = writable<string>('ALL');
+export const selectedStatusFilter = writable<StatusFilterType>('ALL');
 
 const initialDensity = (typeof localStorage !== 'undefined' && localStorage.getItem('workspace_view_density') as ViewDensity) || 'compact';
 export const viewDensity = writable<ViewDensity>(initialDensity);
