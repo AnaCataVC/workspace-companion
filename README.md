@@ -23,6 +23,15 @@
 - 🔄 **1-Click GitHub CLI Profile Switcher**: Instantly toggle between personal and corporate GitHub CLI identities (e.g. `gh auth switch`) and prevent author mismatch.
 - 🪟 **Spotlight-style Floating Window**: Resides silently in the Windows system tray (<40 MB RAM in background), displays adjacent to the taskbar upon click, and auto-hides when losing focus.
 
+#### 🧭 UI Anatomy at a Glance:
+Each worktree row displays the **Git Branch Badge** (left interactive button to switch branches) and the **Physical Folder Path** (center/right name referenced by CLI tools and AI agents) side-by-side:
+```text
+┌────────────────────────────┐       ┌────────────────┐
+│ [⎇] feature/branch-name [▼]│       │ worktree-folder│   [● dirty]   [🚀 IDE] [>_] [📁] [🗑]
+└────────────────────────────┘       └────────────────┘
+```
+For a comprehensive breakdown of all toolbar buttons, status indicators, and view density modes, see the **[User Interface & Navigation Guide](docs/ui-guide.md)**.
+
 ---
 
 ### 2. Technologies Used
@@ -75,6 +84,7 @@ npm run build
 ---
 
 ### 5. Documentation & Architectural Decisions
+- 🧭 [User Interface & Navigation Guide](docs/ui-guide.md)
 - 📖 [Technical Architecture & Design](docs/architecture.md)
 - 🏛️ [Architectural Decision Records (ADRs)](docs/adr/)
   - [ADR 0001: Tauri v2 System Tray & Window Positioning](docs/adr/0001-tauri-v2-system-tray-and-window-positioning.md)
@@ -95,6 +105,15 @@ npm run build
 - 🧹 **Limpiador Seguro de Worktrees Huérfanos**: Detecta ramas mergeadas o eliminadas remotamente con validación previa de cambios sin commitear para evitar pérdida accidental de código.
 - 🔄 **Conmutador de Cuentas GitHub CLI en 1 Clic**: Alterna de forma inmediata entre cuentas de trabajo y personales (`gh auth switch`).
 - 🪟 **Ventana Flotante Estilo Spotlight**: Permanece en la bandeja consumiendo menos de 40 MB de RAM, se abre al hacer clic sobre el tray y se auto-oculta al desenfocar (*auto-hide on blur*).
+
+#### 🧭 Anatomía de la Interfaz:
+Cada fila de worktree muestra en paralelo el **Badge de Rama Git** (botón interactivo para alternar ramas a la izquierda) y la **Carpeta Física** (nombre del directorio a la derecha referenciado por herramientas CLI y agentes de IA):
+```text
+┌────────────────────────────┐       ┌────────────────┐
+│ [⎇] feature/nombre-rama [▼]│       │ carpeta-worktr │   [● dirty]   [🚀 IDE] [>_] [📁] [🗑]
+└────────────────────────────┘       └────────────────┘
+```
+Para conocer el desglose detallado de todos los botones de la barra de herramientas, indicadores de estado y modos de vista, consulta la **[Guía de Interfaz de Usuario y Navegación](docs/ui-guide.md)**.
 
 ---
 
@@ -129,6 +148,7 @@ npx tauri dev
 ---
 
 ### 5. Documentación y Decisiones Arquitectónicas
+- 🧭 [Guía de Interfaz de Usuario y Navegación](docs/ui-guide.md)
 - 📖 [Arquitectura Técnica y Diseño](docs/architecture.md)
 - 🏛️ [Registro de Decisiones Arquitectónicas (ADRs)](docs/adr/)
   - [ADR 0001: Integración con System Tray y Posicionamiento de Ventana](docs/adr/0001-tauri-v2-system-tray-and-window-positioning.md)
