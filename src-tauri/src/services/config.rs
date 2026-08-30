@@ -36,6 +36,10 @@ pub struct AppConfig {
     pub auto_switch_account: bool,
     #[serde(default = "default_editor")]
     pub default_editor: String,
+    #[serde(default = "default_terminal")]
+    pub default_terminal: String,
+    #[serde(default = "default_true")]
+    pub show_terminal_button: bool,
 }
 
 fn default_version() -> u32 {
@@ -46,6 +50,10 @@ fn default_editor() -> String {
     "vscode".to_string()
 }
 
+fn default_terminal() -> String {
+    "wt".to_string()
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -53,6 +61,8 @@ impl Default for AppConfig {
             watch_folders: Vec::new(),
             auto_switch_account: true,
             default_editor: "vscode".to_string(),
+            default_terminal: "wt".to_string(),
+            show_terminal_button: true,
         }
     }
 }
@@ -138,6 +148,8 @@ mod tests {
         assert!(config.watch_folders.is_empty());
         assert!(config.auto_switch_account);
         assert_eq!(config.default_editor, "vscode");
+        assert_eq!(config.default_terminal, "wt");
+        assert!(config.show_terminal_button);
     }
 
     #[test]
@@ -163,6 +175,8 @@ mod tests {
         let config: AppConfig = serde_json::from_str(json).unwrap();
         assert_eq!(config.version, 1);
         assert_eq!(config.default_editor, "vscode");
+        assert_eq!(config.default_terminal, "wt");
+        assert!(config.show_terminal_button);
         assert!(config.auto_switch_account);
         assert_eq!(config.watch_folders.len(), 1);
         assert!(config.watch_folders[0].enabled);

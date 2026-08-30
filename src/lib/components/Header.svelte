@@ -3,14 +3,11 @@
   import { activeGhAccount } from '../stores/ghAuth';
   import { viewDensity } from '../stores/appConfig';
   import { RefreshCw, Pin, PinOff, Github, Search, Plus, Settings2, LayoutList, LayoutGrid } from 'lucide-svelte';
-  import { createEventDispatcher } from 'svelte';
 
   export let onRefresh: () => void;
   export let onOpenGhModal: () => void;
   export let onOpenNewWorktreeModal: () => void;
   export let onOpenSettingsModal: () => void;
-
-  const dispatch = createEventDispatcher();
 
   function togglePin() {
     isPinned.update(p => !p);

@@ -8,7 +8,6 @@
     AlertCircle,
     X,
     Loader2,
-    Check,
     FolderGit2,
     Sparkles
   } from 'lucide-svelte';

@@ -74,11 +74,22 @@ export interface WatchFolder {
   maxDepth: number; // 1 to 5
 }
 
-export interface AppConfig {
-  version: number;
-  watchFolders: WatchFolder[];
-  autoSwitchAccount: boolean;
-  defaultEditor: SupportedEditor;
+export type SupportedEditor = 'vscode' | 'antigravity' | 'cursor' | 'windsurf' | 'explorer' | 'wt';
+
+export type SupportedTerminal = 'wt' | 'powershell' | 'cmd' | 'git-bash' | 'agy' | 'none';
+
+export interface EditorInfo {
+  id: SupportedEditor;
+  name: string;
+  isAvailable: boolean;
+  iconName: string;
+}
+
+export interface TerminalInfo {
+  id: SupportedTerminal;
+  name: string;
+  isAvailable: boolean;
+  iconName: string;
 }
 
 export interface GhAccount {
@@ -88,14 +99,13 @@ export interface GhAccount {
   host: string;
 }
 
-
-export type SupportedEditor = 'antigravity' | 'vscode' | 'cursor' | 'windsurf' | 'explorer' | 'wt';
-
-export interface EditorInfo {
-  id: SupportedEditor;
-  name: string;
-  isAvailable: boolean;
-  iconName: string;
+export interface AppConfig {
+  version: number;
+  watchFolders: WatchFolder[];
+  autoSwitchAccount: boolean;
+  defaultEditor: SupportedEditor;
+  defaultTerminal: SupportedTerminal;
+  showTerminalButton: boolean;
 }
 
 export interface BranchEntry {

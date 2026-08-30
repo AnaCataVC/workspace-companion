@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { Plus, Settings2, Loader2, ArrowRight, CornerDownLeft, AlertCircle } from 'lucide-svelte';
+  import { Plus, Settings2, Loader2, CornerDownLeft, AlertCircle } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
   import type { CreateWorktreeResult, SuggestWorktreePathResult, SupportedEditor } from '../types';
-  import { installedEditors } from '../stores/editors';
+  import { appConfig } from '../stores/appConfig';
 
   export let repoPath: string;
   export let defaultBranch: string = 'main';
@@ -19,7 +19,6 @@
   let suggestedPath = '';
   let isCreating = false;
   let errorMessage: string | null = null;
-  let inputEl: HTMLInputElement | null = null;
 
   function sanitizeSlug(name: string): string {
     return name
@@ -86,9 +85,7 @@
       });
 
       if (createRes.success) {
-        // Find preferred editor
-        const savedEditor = localStorage.getItem('workspace_preferred_editor') as SupportedEditor | null;
-        const editor = savedEditor || 'vscode';
+        const editor = ($appConfig.defaultEditor as SupportedEditor) || 'vscode';
         
         dispatch('openEditor', { editor, path: createRes.worktreePath });
         dispatch('worktreeCreated', {
@@ -123,7 +120,6 @@
       {/if}
 
       <input
-        bind:this={inputEl}
         bind:value={branchInput}
         on:focus={handleFocus}
         on:blur={handleBlur}

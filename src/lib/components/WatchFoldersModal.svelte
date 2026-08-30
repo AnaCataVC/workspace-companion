@@ -1,22 +1,17 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { AppConfig, WatchFolder, GhAccount, SupportedEditor } from '../types';
-  import { installedEditors } from '../stores/editors';
+  import type { AppConfig, WatchFolder, GhAccount, SupportedEditor, SupportedTerminal } from '../types';
+  import { installedEditors, installedTerminals } from '../stores/editors';
   import {
     FolderSync,
     Plus,
     Trash2,
     X,
-    Check,
     Github,
     Folder,
     Layers,
     Save,
-    Settings2,
-    Sparkles,
-    Code2,
-    Compass,
-    Terminal
+    Settings2
   } from 'lucide-svelte';
 
   export let isOpen: boolean = false;
@@ -33,11 +28,15 @@
   let localWatchFolders: WatchFolder[] = [];
   let localAutoSwitch: boolean = true;
   let localDefaultEditor: SupportedEditor = 'vscode';
+  let localDefaultTerminal: SupportedTerminal = 'wt';
+  let localShowTerminalButton: boolean = true;
 
   $: if (isOpen && config) {
     localWatchFolders = JSON.parse(JSON.stringify(config.watchFolders || []));
     localAutoSwitch = config.autoSwitchAccount ?? true;
     localDefaultEditor = config.defaultEditor || 'vscode';
+    localDefaultTerminal = config.defaultTerminal || 'wt';
+    localShowTerminalButton = config.showTerminalButton ?? true;
   }
 
   function addFolder() {
@@ -63,7 +62,9 @@
       version: 1,
       watchFolders: localWatchFolders.filter(f => f.path.trim().length > 0),
       autoSwitchAccount: localAutoSwitch,
-      defaultEditor: localDefaultEditor
+      defaultEditor: localDefaultEditor,
+      defaultTerminal: localDefaultTerminal,
+      showTerminalButton: localShowTerminalButton
     };
     dispatch('save', updatedConfig);
   }
@@ -212,7 +213,7 @@
         <div class="flex items-center justify-between">
           <div class="flex flex-col">
             <span class="text-[11px] font-medium text-neutral-300">Default Editor / IDE</span>
-            <span class="text-[10px] text-neutral-500">The primary launcher used when clicking on worktree cards</span>
+            <span class="text-[10px] text-neutral-500">The primary IDE launched when clicking worktree action buttons</span>
           </div>
           <select
             bind:value={localDefaultEditor}
@@ -225,6 +226,41 @@
             {/each}
           </select>
         </div>
+
+        <!-- Default Terminal / CLI Selector -->
+        <div class="flex items-center justify-between">
+          <div class="flex flex-col">
+            <span class="text-[11px] font-medium text-neutral-300">Default Terminal / CLI</span>
+            <span class="text-[10px] text-neutral-500">Console environment launched for worktree terminal actions</span>
+          </div>
+          <select
+            bind:value={localDefaultTerminal}
+            class="bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-xs text-neutral-200 focus:outline-hidden focus:border-indigo-500"
+          >
+            {#each $installedTerminals as terminal (terminal.id)}
+              <option value={terminal.id} disabled={!terminal.isAvailable}>
+                {terminal.name}
+              </option>
+            {/each}
+          </select>
+        </div>
+
+        <!-- Show Terminal Quick Button Checkbox -->
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            bind:checked={localShowTerminalButton}
+            class="rounded bg-neutral-950 border-neutral-700 text-indigo-600 focus:ring-0 focus:outline-hidden"
+          />
+          <div class="flex flex-col">
+            <span class="text-[11px] font-medium text-neutral-300">
+              Show quick Terminal / CLI button in worktree rows
+            </span>
+            <span class="text-[10px] text-neutral-500">
+              When disabled, only the default IDE and folder explorer buttons are shown.
+            </span>
+          </div>
+        </label>
 
         <!-- Auto Switch Account Checkbox -->
         <label class="flex items-center gap-2 cursor-pointer select-none">

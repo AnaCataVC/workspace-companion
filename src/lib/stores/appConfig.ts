@@ -5,7 +5,9 @@ export const appConfig = writable<AppConfig>({
   version: 1,
   watchFolders: [],
   autoSwitchAccount: true,
-  defaultEditor: 'vscode'
+  defaultEditor: 'vscode',
+  defaultTerminal: 'wt',
+  showTerminalButton: true
 });
 
 export const selectedAccountFilter = writable<string>('ALL');

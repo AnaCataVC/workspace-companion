@@ -6,13 +6,14 @@
   import WorktreeCard from './WorktreeCard.svelte';
   import WorktreeItemRow from './WorktreeItemRow.svelte';
   import QuickWorktreeInline from './QuickWorktreeInline.svelte';
-  import type { RepositoryWorktrees, WorktreeInfo, SupportedEditor, BatchDeleteTarget } from '../types';
-  import { FolderGit2, Sparkles, Inbox, Plus, Github, Zap, Settings2, CheckSquare, Square } from 'lucide-svelte';
+  import type { RepositoryWorktrees, WorktreeInfo, SupportedEditor, SupportedTerminal, BatchDeleteTarget } from '../types';
+  import { FolderGit2, Sparkles, Inbox, Github, Zap, Settings2, CheckSquare, Square } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
 
   const dispatch = createEventDispatcher<{
     openPath: string;
     openEditor: { editor: SupportedEditor; path: string };
+    openTerminal: { terminal: SupportedTerminal; path: string };
     requestSwitchBranch: { worktree: WorktreeInfo; repoPath: string };
     requestDelete: { worktree: WorktreeInfo; repoPath: string };
     cleanAllOrphans: string; // repoPath
@@ -224,6 +225,7 @@
                 isLast={idx === repo.worktrees.length - 1}
                 on:openPath={(e) => dispatch('openPath', e.detail)}
                 on:openEditor={(e) => dispatch('openEditor', e.detail)}
+                on:openTerminal={(e) => dispatch('openTerminal', e.detail)}
                 on:requestSwitchBranch={(e) => dispatch('requestSwitchBranch', e.detail)}
                 on:requestDelete={(e) => dispatch('requestDelete', { worktree: e.detail, repoPath: repo.repoPath })}
               />

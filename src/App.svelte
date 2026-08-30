@@ -20,6 +20,7 @@
     WorktreeInfo,
     GhAccount,
     SupportedEditor,
+    SupportedTerminal,
     EditorInfo,
     WorktreeBranchesResponse,
     BranchEntry,
@@ -121,7 +122,7 @@
       if (cmd === 'checkout_worktree_branch') {
         return { success: true, newBranch: args.targetBranch, headSha: '1a2b3c4', message: 'Checked out' } as unknown as T;
       }
-      if (cmd === 'open_in_editor' || cmd === 'switch_gh_account' || cmd === 'remove_worktree') {
+      if (cmd === 'open_in_editor' || cmd === 'open_in_terminal' || cmd === 'switch_gh_account' || cmd === 'remove_worktree') {
         return { success: true } as unknown as T;
       }
       return null as unknown as T;
@@ -222,6 +223,15 @@
     await ensureMatchingAccountForPath(path);
     invokeTauri('open_in_editor', { editor, path }).catch((err: any) => {
       alert(`Could not open editor (${editor}): ${err?.message || err}`);
+    });
+  }
+
+  async function handleOpenTerminal(event: CustomEvent<{ terminal: SupportedTerminal; path: string }>) {
+    const { terminal, path } = event.detail;
+    if (terminal === 'none') return;
+    await ensureMatchingAccountForPath(path);
+    invokeTauri('open_in_terminal', { terminal, path }).catch((err: any) => {
+      alert(`Could not open terminal (${terminal}): ${err?.message || err}`);
     });
   }
 
@@ -519,6 +529,7 @@
   <WorktreeList
     on:openPath={handleOpenPath}
     on:openEditor={handleOpenEditor}
+    on:openTerminal={handleOpenTerminal}
     on:requestSwitchBranch={handleRequestSwitchBranch}
     on:newWorktreeForRepo={(e) => handleOpenNewWorktree(e.detail)}
     on:switchGhAccount={(e) => handleSwitchGhAccount(e.detail)}

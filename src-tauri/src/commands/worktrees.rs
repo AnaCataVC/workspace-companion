@@ -6,6 +6,8 @@ use crate::services::git::{
 use crate::services::worktree_cleaner::{
     BatchDeleteSummary, BatchDeleteTarget, WorktreeCleanerService,
 };
+use rayon::prelude::*;
+use tauri::{AppHandle, Emitter};
 
 #[tauri::command]
 pub async fn get_worktree_diff_summary(
@@ -24,9 +26,6 @@ pub async fn save_app_config(config: AppConfig) -> Result<AppConfig, String> {
     ConfigService::save_config(&config)?;
     Ok(config)
 }
-
-use rayon::prelude::*;
-use tauri::{AppHandle, Emitter};
 
 #[tauri::command]
 pub async fn scan_worktrees(app: AppHandle) -> Result<(), String> {
@@ -86,6 +85,11 @@ pub async fn open_path(path: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn open_in_editor(editor: String, path: String) -> Result<(), String> {
     GitService::open_in_editor(&editor, &path)
+}
+
+#[tauri::command]
+pub async fn open_in_terminal(terminal: String, path: String) -> Result<(), String> {
+    GitService::open_in_terminal(&terminal, &path)
 }
 
 #[tauri::command]

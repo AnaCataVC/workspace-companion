@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { WorktreeInfo, SupportedEditor, WorktreeDiffSummary } from '../types';
+  import type { WorktreeInfo, SupportedEditor, SupportedTerminal, WorktreeDiffSummary } from '../types';
   import {
     GitBranch,
     Folder,
@@ -13,13 +13,12 @@
     ChevronDown,
     Bot,
     Anchor,
-    ExternalLink,
-    FileText,
     Flame
   } from 'lucide-svelte';
   import { installedEditors } from '../stores/editors';
   import { batchSelection, selectedPaths } from '../stores/batchSelection';
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { appConfig } from '../stores/appConfig';
+  import { createEventDispatcher } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
 
   export let worktree: WorktreeInfo;
@@ -30,11 +29,15 @@
   const dispatch = createEventDispatcher<{
     openPath: string;
     openEditor: { editor: SupportedEditor; path: string };
+    openTerminal: { terminal: SupportedTerminal; path: string };
     requestSwitchBranch: { worktree: WorktreeInfo; repoPath: string };
     requestDelete: WorktreeInfo;
   }>();
 
-  let preferredEditor: SupportedEditor = 'vscode';
+  $: preferredEditor = ($appConfig.defaultEditor as SupportedEditor) || 'vscode';
+  $: preferredTerminal = ($appConfig.defaultTerminal as SupportedTerminal) || 'wt';
+  $: showTerminalBtn = ($appConfig.showTerminalButton !== false) && preferredTerminal !== 'none';
+
   let isHovered = false;
   let showDiffPopover = false;
   let diffSummary: WorktreeDiffSummary | null = null;
@@ -53,30 +56,6 @@
       isDirty: worktree.isDirty,
       uncommittedFilesCount: worktree.uncommittedFilesCount
     });
-  }
-
-  function checkAvailable(id: SupportedEditor): boolean {
-    const found = $installedEditors.find(e => e.id === id);
-    return found ? found.isAvailable : true;
-  }
-
-  onMount(() => {
-    const saved = localStorage.getItem('workspace_preferred_editor') as SupportedEditor | null;
-    if (saved && checkAvailable(saved)) {
-      preferredEditor = saved;
-    } else {
-      const firstAvail = $installedEditors.find(e => e.isAvailable);
-      if (firstAvail) {
-        preferredEditor = firstAvail.id as SupportedEditor;
-      }
-    }
-  });
-
-  $: if (!checkAvailable(preferredEditor)) {
-    const firstAvail = $installedEditors.find(e => e.isAvailable);
-    if (firstAvail) {
-      preferredEditor = firstAvail.id as SupportedEditor;
-    }
   }
 
   function getShortBranch(fullBranch: string | null): string {
@@ -251,7 +230,7 @@
     <button
       type="button"
       on:click={() => dispatch('openEditor', { editor: preferredEditor, path: worktree.path })}
-      title={`Open in ${preferredEditor.toUpperCase()}`}
+      title={`Open in ${preferredEditor === 'antigravity' ? 'Antigravity IDE' : preferredEditor.toUpperCase()}`}
       class="p-1 rounded hover:bg-neutral-800 text-neutral-400 hover:text-white border border-transparent hover:border-neutral-700 transition-colors flex items-center gap-1"
     >
       {#if preferredEditor === 'antigravity'}
@@ -262,22 +241,34 @@
         <Sparkles size={12} class="text-purple-400" />
       {:else if preferredEditor === 'windsurf'}
         <Compass size={12} class="text-emerald-400" />
-      {:else if preferredEditor === 'wt'}
-        <Terminal size={12} class="text-neutral-300" />
       {:else}
         <Folder size={12} class="text-amber-400" />
       {/if}
     </button>
 
-    <!-- 1-Click Launch Windows Terminal (wt) -->
-    <button
-      type="button"
-      on:click={() => dispatch('openEditor', { editor: 'wt', path: worktree.path })}
-      title="Open Windows Terminal in worktree"
-      class="p-1 rounded hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 border border-transparent hover:border-neutral-700 transition-colors"
-    >
-      <Terminal size={12} />
-    </button>
+    <!-- 1-Click Launch Terminal / CLI (configurable & toggleable) -->
+    {#if showTerminalBtn}
+      <button
+        type="button"
+        on:click={() => dispatch('openTerminal', { terminal: preferredTerminal, path: worktree.path })}
+        title={preferredTerminal === 'agy'
+          ? 'Open AGY CLI in worktree'
+          : preferredTerminal === 'powershell'
+          ? 'Open PowerShell in worktree'
+          : preferredTerminal === 'cmd'
+          ? 'Open Command Prompt in worktree'
+          : preferredTerminal === 'git-bash'
+          ? 'Open Git Bash in worktree'
+          : 'Open Windows Terminal in worktree'}
+        class="p-1 rounded hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 border border-transparent hover:border-neutral-700 transition-colors"
+      >
+        {#if preferredTerminal === 'agy'}
+          <Bot size={12} class="text-indigo-400" />
+        {:else}
+          <Terminal size={12} />
+        {/if}
+      </button>
+    {/if}
 
     <!-- 1-Click Open File Explorer -->
     <button

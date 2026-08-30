@@ -15,7 +15,8 @@
   } from 'lucide-svelte';
   import { installedEditors } from '../stores/editors';
   import { batchSelection, selectedPaths } from '../stores/batchSelection';
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { appConfig } from '../stores/appConfig';
+  import { createEventDispatcher } from 'svelte';
 
   export let worktree: WorktreeInfo;
   export let repoPath: string = '';
@@ -29,8 +30,8 @@
   }>();
 
   let isEditorMenuOpen = false;
-  let preferredEditor: SupportedEditor = 'antigravity';
 
+  $: preferredEditor = ($appConfig.defaultEditor as SupportedEditor) || 'vscode';
   $: isSelected = $selectedPaths.has(worktree.path);
 
   function toggleSelection() {
@@ -51,30 +52,8 @@
     return found ? found.isAvailable : true;
   }
 
-  onMount(() => {
-    const saved = localStorage.getItem('workspace_preferred_editor') as SupportedEditor | null;
-    if (saved && checkAvailable(saved)) {
-      preferredEditor = saved;
-    } else {
-      // Pick first available
-      const firstAvail = $installedEditors.find(e => e.isAvailable);
-      if (firstAvail) {
-        preferredEditor = firstAvail.id as SupportedEditor;
-      }
-    }
-  });
-
-  $: if (!checkAvailable(preferredEditor)) {
-    const firstAvail = $installedEditors.find(e => e.isAvailable);
-    if (firstAvail) {
-      preferredEditor = firstAvail.id as SupportedEditor;
-    }
-  }
-
   function selectAndLaunchEditor(editor: SupportedEditor) {
     if (!checkAvailable(editor)) return;
-    preferredEditor = editor;
-    localStorage.setItem('workspace_preferred_editor', editor);
     isEditorMenuOpen = false;
     dispatch('openEditor', { editor, path: worktree.path });
   }

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { BatchDeleteTarget, BatchDeleteSummary } from '../types';
-  import { AlertTriangle, Trash2, X, ShieldAlert, CheckCircle2, Flame, GitBranch, FolderGit2 } from 'lucide-svelte';
+  import { Trash2, X, ShieldAlert, CheckCircle2, Flame, GitBranch } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
 
   export let isOpen: boolean = false;
