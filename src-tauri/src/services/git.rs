@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[cfg(target_os = "windows")]
@@ -358,7 +358,7 @@ impl GitService {
         None
     }
 
-    /// Launches the selected IDE, editor, or terminal targeting the given path.
+    /// Launches the selected IDE, editor, or explorer targeting the given path.
     pub fn open_in_editor(editor: &str, path: &str) -> Result<(), String> {
         let p = Path::new(path);
         if !p.exists() {
@@ -370,49 +370,117 @@ impl GitService {
                 open::that(path).map_err(|e| format!("Failed to open Explorer: {}", e))?;
                 Ok(())
             }
-            "wt" => {
-                #[cfg(target_os = "windows")]
-                {
-                    let mut cmd = Command::new("wt");
-                    cmd.args(&["-d", path]);
-                    cmd.creation_flags(CREATE_NO_WINDOW);
-                    cmd.spawn().map_err(|e| format!("Failed to launch Windows Terminal: {}. Ensure wt is available.", e))?;
-                }
-                #[cfg(not(target_os = "windows"))]
-                {
-                    Command::new("wt").args(&["-d", path]).spawn().map_err(|e| e.to_string())?;
-                }
-                Ok(())
-            }
-            "antigravity" | "agy" => {
-                if Self::is_bin_available("antigravity") {
+            "antigravity" => {
+                // Look strictly for Antigravity IDE GUI executables
+                let candidate1 = std::env::var("LOCALAPPDATA")
+                    .map(|la| Path::new(&la).join("Programs").join("Antigravity").join("Antigravity.exe"))
+                    .ok();
+                let candidate2 = std::env::var("LOCALAPPDATA")
+                    .map(|la| Path::new(&la).join("Programs").join("Antigravity IDE").join("Antigravity.exe"))
+                    .ok();
+                let candidate3 = Path::new(r"C:\Program Files\Antigravity\Antigravity.exe");
+
+                if let Some(c) = candidate1.filter(|p| p.exists()) {
+                    Self::launch_detached_editor(&c.to_string_lossy(), path)
+                } else if let Some(c) = candidate2.filter(|p| p.exists()) {
+                    Self::launch_detached_editor(&c.to_string_lossy(), path)
+                } else if candidate3.exists() {
+                    Self::launch_detached_editor(&candidate3.to_string_lossy(), path)
+                } else if Self::is_bin_available("antigravity") {
                     Self::launch_detached_editor("antigravity", path)
-                } else if Self::is_bin_available("agy") {
-                    Self::launch_detached_editor("agy", path)
-                } else if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
-                    let candidate1 = Path::new(&local_app_data)
-                        .join("Programs")
-                        .join("Antigravity")
-                        .join("Antigravity.exe");
-                    let candidate2 = Path::new(&local_app_data)
-                        .join("Programs")
-                        .join("Antigravity IDE")
-                        .join("Antigravity.exe");
-                    if candidate1.exists() {
-                        Self::launch_detached_editor(&candidate1.to_string_lossy(), path)
-                    } else if candidate2.exists() {
-                        Self::launch_detached_editor(&candidate2.to_string_lossy(), path)
-                    } else {
-                        Err("Antigravity executable not found. Ensure Antigravity IDE is installed.".into())
-                    }
                 } else {
-                    Err("Antigravity executable not found.".into())
+                    Err("Antigravity IDE executable not found. Ensure Antigravity IDE is installed.".into())
                 }
             }
             "vscode" | "code" => Self::launch_detached_editor("code", path),
             "cursor" => Self::launch_detached_editor("cursor", path),
             "windsurf" => Self::launch_detached_editor("windsurf", path),
+            "wt" => Self::open_in_terminal("wt", path),
             unknown => Err(format!("Unsupported editor identifier: {}", unknown)),
+        }
+    }
+
+    /// Launches the selected terminal or CLI targeting the given path.
+    pub fn open_in_terminal(terminal: &str, path: &str) -> Result<(), String> {
+        let p = Path::new(path);
+        if !p.exists() {
+            return Err(format!("Target path does not exist: {}", path));
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            match terminal {
+                "wt" => {
+                    if Self::is_bin_available("wt") {
+                        let mut cmd = Command::new("wt");
+                        cmd.args(&["-d", path]);
+                        cmd.creation_flags(CREATE_NO_WINDOW);
+                        cmd.spawn().map_err(|e| format!("Failed to launch Windows Terminal: {}", e))?;
+                        Ok(())
+                    } else {
+                        Self::open_in_terminal("powershell", path)
+                    }
+                }
+                "powershell" => {
+                    let escaped_path = path.replace('\'', "''");
+                    let mut cmd = Command::new("cmd");
+                    cmd.args(&["/C", "start", "powershell", "-NoExit", "-Command", &format!("Set-Location -LiteralPath '{}'", escaped_path)]);
+                    cmd.creation_flags(CREATE_NO_WINDOW);
+                    cmd.spawn().map_err(|e| format!("Failed to launch PowerShell: {}", e))?;
+                    Ok(())
+                }
+                "cmd" => {
+                    let mut cmd = Command::new("cmd");
+                    cmd.args(&["/C", "start", "cmd", "/K", &format!("cd /D \"{}\"", path)]);
+                    cmd.creation_flags(CREATE_NO_WINDOW);
+                    cmd.spawn().map_err(|e| format!("Failed to launch CMD: {}", e))?;
+                    Ok(())
+                }
+                "git-bash" => {
+                    let standard_path = Path::new(r"C:\Program Files\Git\git-bash.exe");
+                    let user_path = std::env::var("LOCALAPPDATA")
+                        .map(|la| Path::new(&la).join("Programs").join("Git").join("git-bash.exe"))
+                        .unwrap_or_else(|_| PathBuf::from(""));
+
+                    let bash_exe = if standard_path.exists() {
+                        Some(standard_path.to_string_lossy().to_string())
+                    } else if user_path.exists() {
+                        Some(user_path.to_string_lossy().to_string())
+                    } else if Self::is_bin_available("git-bash") {
+                        Some("git-bash".to_string())
+                    } else {
+                        None
+                    };
+
+                    if let Some(exe) = bash_exe {
+                        let mut cmd = Command::new("cmd");
+                        cmd.args(&["/C", "start", "", &exe, &format!("--cd={}", path)]);
+                        cmd.creation_flags(CREATE_NO_WINDOW);
+                        cmd.spawn().map_err(|e| format!("Failed to launch Git Bash: {}", e))?;
+                        Ok(())
+                    } else {
+                        Self::open_in_terminal("powershell", path)
+                    }
+                }
+                "agy" => {
+                    if Self::is_bin_available("agy") {
+                        let mut cmd = Command::new("cmd");
+                        cmd.args(&["/C", "start", "agy", path]);
+                        cmd.creation_flags(CREATE_NO_WINDOW);
+                        cmd.spawn().map_err(|e| format!("Failed to launch AGY CLI: {}", e))?;
+                        Ok(())
+                    } else {
+                        Err("AGY CLI is not available in PATH.".into())
+                    }
+                }
+                "none" => Ok(()),
+                unknown => Err(format!("Unsupported terminal identifier: {}", unknown)),
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            Command::new("x-terminal-emulator").arg("-e").arg(path).spawn().map_err(|e| e.to_string())?;
+            Ok(())
         }
     }
 
@@ -453,11 +521,10 @@ impl GitService {
     /// Detects installed editors by probing executables and standard installation paths silently.
     pub fn detect_installed_editors() -> Vec<EditorInfo> {
         let editors = vec![
-            ("antigravity", "Antigravity", "antigravity", "sparkles"),
             ("vscode", "VS Code", "code", "code"),
+            ("antigravity", "Antigravity IDE", "antigravity", "bot"),
             ("cursor", "Cursor", "cursor", "sparkles"),
             ("windsurf", "Windsurf", "windsurf", "wind"),
-            ("wt", "Windows Terminal", "wt", "terminal"),
             ("explorer", "File Explorer", "explorer", "folder"),
         ];
 
@@ -467,22 +534,22 @@ impl GitService {
                 let available = if id == "explorer" {
                     true
                 } else if id == "antigravity" {
-                    Self::is_bin_available("antigravity")
-                        || Self::is_bin_available("agy")
-                        || std::env::var("LOCALAPPDATA")
-                            .map(|la| {
-                                Path::new(&la)
+                    std::env::var("LOCALAPPDATA")
+                        .map(|la| {
+                            Path::new(&la)
+                                .join("Programs")
+                                .join("Antigravity")
+                                .join("Antigravity.exe")
+                                .exists()
+                                || Path::new(&la)
                                     .join("Programs")
-                                    .join("Antigravity")
+                                    .join("Antigravity IDE")
                                     .join("Antigravity.exe")
                                     .exists()
-                                    || Path::new(&la)
-                                        .join("Programs")
-                                        .join("Antigravity IDE")
-                                        .join("Antigravity.exe")
-                                        .exists()
-                            })
-                            .unwrap_or(false)
+                        })
+                        .unwrap_or(false)
+                        || Path::new(r"C:\Program Files\Antigravity\Antigravity.exe").exists()
+                        || Self::is_bin_available("antigravity")
                 } else if id == "cursor" {
                     Self::is_bin_available("cursor")
                         || std::env::var("LOCALAPPDATA")
