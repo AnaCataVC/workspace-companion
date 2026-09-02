@@ -221,11 +221,16 @@ impl WorktreeCleanerService {
                 None
             };
 
-            // Orphan status
-            if let Some(branch_ref) = &wt.branch {
-                let (is_orphan, reason) = GitService::check_orphan_status(path, branch_ref);
-                wt.is_orphaned = is_orphan;
-                wt.orphan_reason = reason;
+            // Orphan status (Root/main worktrees are never orphaned worktrees)
+            if !wt.is_main {
+                if let Some(branch_ref) = &wt.branch {
+                    let (is_orphan, reason) = GitService::check_orphan_status(path, branch_ref);
+                    wt.is_orphaned = is_orphan;
+                    wt.orphan_reason = reason;
+                }
+            } else {
+                wt.is_orphaned = false;
+                wt.orphan_reason = None;
             }
         }
 
@@ -244,7 +249,13 @@ impl WorktreeCleanerService {
         worktree_path: &str,
         force: bool,
     ) -> Result<String, String> {
+        let repo_p = repo_path.as_ref();
         let wt_path = Path::new(worktree_path);
+
+        // Protect main repository working tree
+        if wt_path.join(".git").is_dir() || repo_p == wt_path {
+            return Err("Cannot remove the main working tree of a repository.".to_string());
+        }
 
         if !force {
             let (is_dirty, count) = GitService::check_dirty_status(wt_path);
@@ -304,6 +315,16 @@ impl WorktreeCleanerService {
 
                 for item in repo_targets {
                     let wt_path = Path::new(&item.worktree_path);
+
+                    // Protect main repository working tree
+                    if wt_path.join(".git").is_dir() || Path::new(&repo_path) == wt_path {
+                        local_skipped += 1;
+                        local_errors.push(BatchItemError {
+                            worktree_path: item.worktree_path.clone(),
+                            error: "Cannot remove the main working tree of a repository.".to_string(),
+                        });
+                        continue;
+                    }
 
                     // Pre-flight dirty check if force is false
                     if !item.force {
@@ -418,5 +439,20 @@ mod tests {
         assert_eq!(summary.skipped_count, 0);
         assert!(summary.deleted_paths.is_empty());
         assert!(summary.errors.is_empty());
+    }
+
+    #[test]
+    fn test_remove_worktree_protects_main_repo() {
+        let temp_dir = std::env::temp_dir().join("wt_cleaner_test_main_repo");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+        fs::create_dir_all(temp_dir.join(".git")).unwrap();
+
+        let path_str = temp_dir.to_string_lossy().to_string();
+        let res = WorktreeCleanerService::remove_worktree(&temp_dir, &path_str, false);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("main"));
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }

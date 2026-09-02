@@ -50,7 +50,7 @@
       for (let j = 0; j < repo.worktrees.length; j++) {
         const wt = repo.worktrees[j];
         if (wt.isDirty) repoHasDirty = true;
-        if (wt.isOrphaned) repoHasOrphan = true;
+        if (!wt.isMain && wt.isOrphaned) repoHasOrphan = true;
       }
 
       if (repoHasDirty) dirty++;

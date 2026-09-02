@@ -10,11 +10,13 @@
   import WatchFoldersModal from './lib/components/WatchFoldersModal.svelte';
   import BatchActionBar from './lib/components/BatchActionBar.svelte';
   import BatchDeleteModal from './lib/components/BatchDeleteModal.svelte';
+  import ToastContainer from './lib/components/ToastContainer.svelte';
   import { scannedRepos, isScanning, isPinned, scanError } from './lib/stores/worktrees';
   import { ghAccounts, activeGhAccount, isGhLoading } from './lib/stores/ghAuth';
   import { appConfig, selectedAccountFilter } from './lib/stores/appConfig';
   import { batchSelection, selectedWorktreeList } from './lib/stores/batchSelection';
   import { installedEditors } from './lib/stores/editors';
+  import { notifications } from './lib/stores/notifications';
   import type {
     RepositoryWorktrees,
     WorktreeInfo,
@@ -146,11 +148,12 @@
       const saved = await invokeTauri<AppConfig>('save_app_config', { config: event.detail });
       if (saved) {
         appConfig.set(saved);
+        notifications.success('Settings saved', 'Configuration updated successfully.');
       }
       isSettingsModalOpen = false;
       await refreshWorktrees();
     } catch (err: any) {
-      alert(`Failed to save configuration: ${err?.message || err}`);
+      notifications.error('Failed to save configuration', err?.message || String(err));
     } finally {
       isSavingConfig = false;
     }
@@ -222,7 +225,7 @@
     const { editor, path } = event.detail;
     await ensureMatchingAccountForPath(path);
     invokeTauri('open_in_editor', { editor, path }).catch((err: any) => {
-      alert(`Could not open editor (${editor}): ${err?.message || err}`);
+      notifications.error(`Could not open editor (${editor})`, err?.message || String(err));
     });
   }
 
@@ -231,7 +234,7 @@
     if (terminal === 'none') return;
     await ensureMatchingAccountForPath(path);
     invokeTauri('open_in_terminal', { terminal, path }).catch((err: any) => {
-      alert(`Could not open terminal (${terminal}): ${err?.message || err}`);
+      notifications.error(`Could not open terminal (${terminal})`, err?.message || String(err));
     });
   }
 
@@ -346,7 +349,7 @@
       selectedWorktreeForDelete = null;
       await refreshWorktrees();
     } catch (err: any) {
-      alert(`Error deleting worktree: ${err?.message || err}`);
+      notifications.error('Error deleting worktree', err?.message || String(err));
     } finally {
       isDeletingWorktree = false;
     }
@@ -396,6 +399,7 @@
       if (summary && summary.errors.length === 0 && summary.skippedCount === 0) {
         batchSelection.clear();
         isBatchDeleteModalOpen = false;
+        notifications.success('Worktrees removed', `Successfully removed ${summary.deletedCount} worktree(s).`);
       }
     } catch (err: any) {
       batchDeleteError = err?.message || err?.toString() || 'Failed to remove worktrees';
@@ -404,49 +408,35 @@
     }
   }
 
-  async function handleCleanAllOrphans(event: CustomEvent<string>) {
+  function handleCleanAllOrphans(event: CustomEvent<string>) {
     const repoPath = event.detail;
+    const repo = $scannedRepos.find((r) => r.repoPath === repoPath);
+    if (!repo) return;
 
-    // Collect non-dirty orphans — dirty ones require explicit user confirmation
-    const orphans = $scannedRepos
-      .find((r) => r.repoPath === repoPath)
-      ?.worktrees.filter((w) => w.isOrphaned && !w.isDirty) ?? [];
+    // Collect non-main orphaned worktrees
+    const orphans = repo.worktrees.filter((w) => !w.isMain && w.isOrphaned);
 
     if (orphans.length === 0) {
-      alert('No safe orphaned worktrees to clean (all have uncommitted changes).');
+      notifications.info('No orphaned worktrees found to clean in this repository.');
       return;
     }
 
-    const confirmed = window.confirm(
-      `Remove ${orphans.length} orphaned worktree(s) in this repository?\n\n` +
-      orphans.map((w) => `  • ${w.branch ?? '(detached)'} — ${w.path}`).join('\n') +
-      '\n\nWorktrees with uncommitted changes are skipped.'
-    );
-    if (!confirmed) return;
+    // Populate batch selection with these orphaned targets and open BatchDeleteModal
+    const targets: BatchDeleteTarget[] = orphans.map((w) => ({
+      repoPath: repo.repoPath,
+      worktreePath: w.path,
+      branch: w.branch,
+      isDirty: w.isDirty,
+      uncommittedFilesCount: w.uncommittedFilesCount,
+      repoName: repo.repoName,
+      force: false
+    }));
 
-    const errors: string[] = [];
-    for (const wt of orphans) {
-      try {
-        await invokeTauri('remove_worktree', {
-          repoPath,
-          worktreePath: wt.path,
-          force: false
-        });
-      } catch (err: any) {
-        errors.push(`${wt.branch ?? wt.path}: ${err?.message ?? err}`);
-      }
-    }
-
-    // Clean up stale admin references afterwards
-    try {
-      await invokeTauri('prune_worktrees', { repoPath });
-    } catch (_) { /* non-critical */ }
-
-    await refreshWorktrees();
-
-    if (errors.length > 0) {
-      alert(`Some worktrees could not be removed:\n\n${errors.join('\n')}`);
-    }
+    batchSelection.clear();
+    batchSelection.selectRepo(targets);
+    batchDeleteSummary = null;
+    batchDeleteError = null;
+    isBatchDeleteModalOpen = true;
   }
 
   async function refreshInstalledEditors() {
@@ -601,5 +591,7 @@
     on:switchAccount={handleSwitchGhAccount}
     on:refreshAccounts={refreshGhAccounts}
   />
+
+  <ToastContainer />
 </main>
 

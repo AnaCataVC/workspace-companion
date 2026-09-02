@@ -1,6 +1,6 @@
 <script lang="ts">
   import { scannedRepos, searchFilter } from '../stores/worktrees';
-  import { selectedAccountFilter, selectedStatusFilter, viewDensity } from '../stores/appConfig';
+  import { appConfig, selectedAccountFilter, selectedStatusFilter, viewDensity } from '../stores/appConfig';
   import { activeGhAccount } from '../stores/ghAuth';
   import { batchSelection, selectedPaths } from '../stores/batchSelection';
   import WorktreeCard from './WorktreeCard.svelte';
@@ -48,7 +48,7 @@
       const matchedWorktrees = repo.worktrees.filter(wt => {
         // Status filter for worktrees
         if (status === 'DIRTY' && !wt.isDirty) return false;
-        if (status === 'ORPHANS' && !wt.isOrphaned) return false;
+        if (status === 'ORPHANS' && (wt.isMain || !wt.isOrphaned)) return false;
         if (status === 'CLEAN' && wt.isDirty) return false;
 
         // Text query search
@@ -68,10 +68,8 @@
     .filter(repo => repo.worktrees.length > 0);
 
   function getAnchorBranchName(repo: RepositoryWorktrees): string {
-    const mainWt = repo.worktrees.find(w => w.isMain) || repo.worktrees[0];
-    if (mainWt?.branch) {
-      return mainWt.branch.replace('refs/heads/', '');
-    }
+    const main = repo.worktrees.find(w => w.isMain);
+    if (main?.branch) return main.branch.replace('refs/heads/', '');
     return 'main';
   }
 
@@ -93,29 +91,37 @@
     if (allSelected) {
       batchSelection.deselectRepo(secondaries.map(w => w.path));
     } else {
-      const targets: BatchDeleteTarget[] = secondaries.map(w => ({
+      batchSelection.selectRepo(secondaries.map(w => ({
         repoPath: repo.repoPath,
-        repoName: repo.repoName,
         worktreePath: w.path,
         force: false,
         branch: w.branch,
         isDirty: w.isDirty,
-        uncommittedFilesCount: w.uncommittedFilesCount
-      }));
-      batchSelection.selectRepo(targets);
+        uncommittedFilesCount: w.uncommittedFilesCount,
+        repoName: repo.repoName
+      })));
     }
   }
 </script>
 
-<div class="flex-1 overflow-y-auto p-3 space-y-4">
+<div class="flex-1 overflow-y-auto p-3 space-y-3 custom-scroll">
   {#if filteredRepos.length === 0}
-    <div class="h-48 flex flex-col items-center justify-center text-center text-neutral-500 gap-2.5 p-4">
-      <Inbox size={28} class="text-neutral-600" />
-      {#if $searchFilter}
-        <p class="text-xs">No worktrees match your filter.</p>
-        <p class="text-[11px] text-neutral-600">Try adjusting your search query.</p>
-      {:else if $selectedAccountFilter !== 'ALL'}
-        <p class="text-xs">No repositories assigned to {$selectedAccountFilter}.</p>
+    <div class="flex flex-col items-center justify-center h-48 text-neutral-500 gap-2 select-none">
+      {#if $searchFilter || $selectedStatusFilter !== 'ALL' || $selectedAccountFilter !== 'ALL'}
+        <p class="text-xs">No repositories match your active filter criteria.</p>
+        <button
+          type="button"
+          on:click={() => {
+            searchFilter.set('');
+            selectedStatusFilter.set('ALL');
+            selectedAccountFilter.set('ALL');
+          }}
+          class="px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-[11px] transition-colors"
+        >
+          Clear Filters
+        </button>
+      {:else if $appConfig.watchFolders.length === 0}
+        <p class="text-xs">No watched folders configured yet.</p>
         <button
           type="button"
           on:click={() => dispatch('openSettings')}
@@ -136,7 +142,7 @@
     </div>
   {:else}
     {#each filteredRepos as repo (repo.repoPath)}
-      {@const orphanCount = repo.worktrees.filter(w => w.isOrphaned).length}
+      {@const orphanCount = repo.worktrees.filter(w => !w.isMain && w.isOrphaned).length}
       {@const isDifferentAccount = repo.associatedAccount && $activeGhAccount && repo.associatedAccount !== $activeGhAccount}
       {@const anchorBranch = getAnchorBranchName(repo)}
       {@const secondaries = getSecondaryWorktrees(repo)}
