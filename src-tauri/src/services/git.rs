@@ -318,7 +318,9 @@ impl GitService {
         // Check if upstream branch is gone (git branch -vv)
         if let Ok(branch_vv) = Self::run_git(&repo_root, &["branch", "-vv"]) {
             for line in branch_vv.lines() {
-                if line.contains(&short_branch) && line.contains(": gone]") {
+                let trimmed = line.trim().trim_start_matches('*').trim();
+                let branch_token = trimmed.split_whitespace().next().unwrap_or("");
+                if branch_token == short_branch && line.contains(": gone]") {
                     return (true, Some("Upstream remote branch was deleted".to_string()));
                 }
             }
