@@ -128,17 +128,22 @@ impl WorktreeCleanerService {
 
             while let Some(Ok(entry)) = it.next() {
                 let path = entry.path();
-                if entry.file_type().is_dir() && Self::is_git_repo(path) {
-                    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-                    if seen_paths.insert(canonical) {
-                        results.push(DiscoveredRepo {
-                            path: path.to_path_buf(),
-                            associated_account: watch.account_username.clone(),
-                            watch_folder_path: Some(watch.path.clone()),
-                        });
+                if entry.file_type().is_dir() {
+                    if Self::is_git_repo(path) {
+                        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+                        if seen_paths.insert(canonical) {
+                            results.push(DiscoveredRepo {
+                                path: path.to_path_buf(),
+                                associated_account: watch.account_username.clone(),
+                                watch_folder_path: Some(watch.path.clone()),
+                            });
+                        }
+                        // Stop deeper descent inside this Git repository
+                        it.skip_current_dir();
+                    } else if path.join(".git").is_file() {
+                        // Skip descending into linked worktrees or submodules
+                        it.skip_current_dir();
                     }
-                    // Stop deeper descent inside this Git repository
-                    it.skip_current_dir();
                 }
             }
         }
@@ -165,7 +170,7 @@ impl WorktreeCleanerService {
     /// Checks if a directory is a Git repository root.
     pub fn is_git_repo<P: AsRef<Path>>(path: P) -> bool {
         let p = path.as_ref();
-        p.join(".git").exists()
+        p.join(".git").is_dir()
     }
 
     /// Scans a repository and extracts its worktrees with rich status metadata and account tagging.
@@ -392,9 +397,14 @@ mod tests {
 
         assert!(!WorktreeCleanerService::is_git_repo(&temp_dir));
 
-        // Create .git folder
-        let git_dir = temp_dir.join(".git");
-        fs::create_dir_all(&git_dir).unwrap();
+        // Create .git file (as in linked worktrees) -> must return false
+        let git_file = temp_dir.join(".git");
+        fs::write(&git_file, "gitdir: /path/to/main/.git/worktrees/wt1").unwrap();
+        assert!(!WorktreeCleanerService::is_git_repo(&temp_dir));
+
+        // Remove .git file and create .git directory (as in root repositories) -> must return true
+        fs::remove_file(&git_file).unwrap();
+        fs::create_dir_all(&git_file).unwrap();
         assert!(WorktreeCleanerService::is_git_repo(&temp_dir));
 
         let _ = fs::remove_dir_all(&temp_dir);
