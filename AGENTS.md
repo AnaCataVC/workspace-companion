@@ -104,8 +104,9 @@ npx tauri build
 
 ## 5. Architectural Standards & Best Practices
 
-1. **Subprocess Ergonomics**: Any subprocess spawned from Rust (`std::process::Command`) to run `git` or `gh` must use Windows creation flag `0x08000000` (`CREATE_NO_WINDOW`) to eliminate console pop-ups.
+1. **Subprocess Ergonomics**: Any subprocess spawned from Rust (`std::process::Command`) to run `git` or `gh` must use Windows creation flag `0x08000000` (`CREATE_NO_WINDOW`) and `Stdio::null()` to eliminate console pop-ups and prevent lingering I/O handles.
 2. **Git Porcelain Parsing**: Parse machine-readable porcelain formats (`git worktree list --porcelain`, `git status --porcelain`) to ensure compatibility across localized Git installations.
 3. **Tray Auto-Hide**: The floating window must toggle visibility on tray icon click and auto-hide when losing window focus (`tauri::WindowEvent::Focused(false)`).
 4. **Config Schema Evolution & Backward Compatibility**: Always annotate new fields in `AppConfig` with `#[serde(default = "...")]` in Rust and provide fallback defaults via nullish coalescing (`??`) in TypeScript. This prevents deserialization failures on existing `app_config.json` files.
 5. **Launcher Disambiguation & Subprocess Safety**: Always distinguish between GUI code editors (`open_in_editor`) and interactive CLI/terminal environments (`open_in_terminal`). Escape literal paths when interpolating into shell commands (e.g. `path.replace('\'', "''")` for PowerShell).
+6. **Direct GUI IDE Binary Resolution**: GUI code editors (VS Code, Cursor, Windsurf, Antigravity IDE) must be resolved directly to their native Win32 `.exe` via `resolve_gui_binary` (inspecting `%LOCALAPPDATA%`, `%ProgramFiles%`, Insiders, and dynamic PATH parent un-nesting) and spawned without shell wrappers to guarantee instant, zero-console execution.

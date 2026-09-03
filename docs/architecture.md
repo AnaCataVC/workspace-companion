@@ -35,9 +35,9 @@ The Rust backend handles low-level OS interactions, system tray lifecycle, and s
 2. **Git Engine & Process Service (`services/git.rs`)**:
    - Parses machine-readable output from `git worktree list --porcelain` and `git status --porcelain`.
    - Detects active worktrees, detached HEAD states, locked worktrees, and dirty working trees.
-   - Executes commands with Windows creation flag `CREATE_NO_WINDOW = 0x08000000` to eliminate terminal popups.
-   - Provides decoupled launchers:
-     - `open_in_editor`: Dispatches to desktop GUI IDEs (VS Code, Antigravity IDE, Cursor, Windsurf) by detecting binary locations strictly.
+   - Executes commands with Windows creation flag `CREATE_NO_WINDOW = 0x08000000` and detached standard I/O (`Stdio::null()`) to eliminate terminal popups.
+   - Provides decoupled, zero-console launchers:
+     - `open_in_editor`: Resolves native Win32 GUI executables directly via `resolve_gui_binary` (inspecting User `%LOCALAPPDATA%`, System `%ProgramFiles%`, Insiders, and dynamic PATH parent un-nesting) to launch VS Code (`Code.exe`), Antigravity IDE (`Antigravity.exe`), Cursor (`Cursor.exe`), or Windsurf (`Windsurf.exe`) instantly with 0 console windows.
      - `open_in_terminal`: Dispatches to terminal environments (Windows Terminal `wt`, PowerShell, CMD, Git Bash, AGY CLI) with fallback cascade.
    - Leverages `rayon` for parallel repository discovery across configured watch folders.
 

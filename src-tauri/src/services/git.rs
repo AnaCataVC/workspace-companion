@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -360,6 +360,161 @@ impl GitService {
         None
     }
 
+    /// Resolves the direct executable path for standard IDEs on Windows.
+    pub fn resolve_gui_binary(id: &str) -> Option<PathBuf> {
+        #[cfg(target_os = "windows")]
+        {
+            let local_app_data = std::env::var("LOCALAPPDATA").ok();
+            let program_files = std::env::var("ProgramFiles").ok();
+            let program_files_x86 = std::env::var("ProgramFiles(x86)").ok();
+
+            match id {
+                "vscode" | "code" => {
+                    // 1. User setup
+                    if let Some(ref la) = local_app_data {
+                        let p = Path::new(la).join("Programs").join("Microsoft VS Code").join("Code.exe");
+                        if p.exists() {
+                            return Some(p);
+                        }
+                    }
+                    // 2. System setup (64-bit)
+                    if let Some(ref pf) = program_files {
+                        let p = Path::new(pf).join("Microsoft VS Code").join("Code.exe");
+                        if p.exists() {
+                            return Some(p);
+                        }
+                    }
+                    // 3. System setup (32-bit)
+                    if let Some(ref pf86) = program_files_x86 {
+                        let p = Path::new(pf86).join("Microsoft VS Code").join("Code.exe");
+                        if p.exists() {
+                            return Some(p);
+                        }
+                    }
+                    // 4. VS Code Insiders
+                    if let Some(ref la) = local_app_data {
+                        let p = Path::new(la).join("Programs").join("Microsoft VS Code Insiders").join("Code - Insiders.exe");
+                        if p.exists() {
+                            return Some(p);
+                        }
+                    }
+                    if let Some(ref pf) = program_files {
+                        let p = Path::new(pf).join("Microsoft VS Code Insiders").join("Code - Insiders.exe");
+                        if p.exists() {
+                            return Some(p);
+                        }
+                    }
+                    // 5. Inspect PATH via where.exe code / code.cmd and look in parent folder for Code.exe
+                    if let Some(p) = Self::find_exe_from_path_bin("code", "Code.exe") {
+                        return Some(p);
+                    }
+                }
+                "antigravity" => {
+                    if let Some(ref la) = local_app_data {
+                        let p1 = Path::new(la).join("Programs").join("Antigravity").join("Antigravity.exe");
+                        if p1.exists() {
+                            return Some(p1);
+                        }
+                        let p2 = Path::new(la).join("Programs").join("Antigravity IDE").join("Antigravity.exe");
+                        if p2.exists() {
+                            return Some(p2);
+                        }
+                    }
+                    if let Some(ref pf) = program_files {
+                        let p1 = Path::new(pf).join("Antigravity").join("Antigravity.exe");
+                        if p1.exists() {
+                            return Some(p1);
+                        }
+                        let p2 = Path::new(pf).join("Antigravity IDE").join("Antigravity.exe");
+                        if p2.exists() {
+                            return Some(p2);
+                        }
+                    }
+                    let p_direct = Path::new(r"C:\Program Files\Antigravity\Antigravity.exe");
+                    if p_direct.exists() {
+                        return Some(p_direct.to_path_buf());
+                    }
+                    if let Some(p) = Self::find_exe_from_path_bin("antigravity", "Antigravity.exe") {
+                        return Some(p);
+                    }
+                }
+                "cursor" => {
+                    if let Some(ref la) = local_app_data {
+                        let p = Path::new(la).join("Programs").join("cursor").join("Cursor.exe");
+                        if p.exists() {
+                            return Some(p);
+                        }
+                    }
+                    if let Some(ref pf) = program_files {
+                        let p = Path::new(pf).join("Cursor").join("Cursor.exe");
+                        if p.exists() {
+                            return Some(p);
+                        }
+                    }
+                    if let Some(p) = Self::find_exe_from_path_bin("cursor", "Cursor.exe") {
+                        return Some(p);
+                    }
+                }
+                "windsurf" => {
+                    if let Some(ref la) = local_app_data {
+                        let p1 = Path::new(la).join("Programs").join("windsurf").join("Windsurf.exe");
+                        if p1.exists() {
+                            return Some(p1);
+                        }
+                        let p2 = Path::new(la).join("Programs").join("Windsurf").join("Windsurf.exe");
+                        if p2.exists() {
+                            return Some(p2);
+                        }
+                    }
+                    if let Some(ref pf) = program_files {
+                        let p = Path::new(pf).join("Windsurf").join("Windsurf.exe");
+                        if p.exists() {
+                            return Some(p);
+                        }
+                    }
+                    if let Some(p) = Self::find_exe_from_path_bin("windsurf", "Windsurf.exe") {
+                        return Some(p);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    /// Helper to find executable from where.exe resolution (handles bin/ scripts pointing to parent .exe)
+    #[cfg(target_os = "windows")]
+    fn find_exe_from_path_bin(bin_name: &str, target_exe_name: &str) -> Option<PathBuf> {
+        let mut cmd = Command::new("where");
+        cmd.arg(bin_name);
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        if let Ok(output) = cmd.output() {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for line in stdout.lines() {
+                    let path_buf = PathBuf::from(line.trim());
+                    if path_buf.exists() {
+                        if path_buf.file_name().and_then(|n| n.to_str()).map(|n| n.eq_ignore_ascii_case(target_exe_name)).unwrap_or(false) {
+                            return Some(path_buf);
+                        }
+                        // Check if located inside a bin/ subdirectory
+                        if let Some(parent) = path_buf.parent() {
+                            if parent.file_name().and_then(|n| n.to_str()).map(|n| n.eq_ignore_ascii_case("bin")).unwrap_or(false) {
+                                if let Some(grandparent) = parent.parent() {
+                                    let candidate = grandparent.join(target_exe_name);
+                                    if candidate.exists() {
+                                        return Some(candidate);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Launches the selected IDE, editor, or explorer targeting the given path.
     pub fn open_in_editor(editor: &str, path: &str) -> Result<(), String> {
         let p = Path::new(path);
@@ -372,31 +527,42 @@ impl GitService {
                 open::that(path).map_err(|e| format!("Failed to open Explorer: {}", e))?;
                 Ok(())
             }
+            "vscode" | "code" => {
+                if let Some(exe) = Self::resolve_gui_binary("vscode") {
+                    Self::launch_detached_editor(&exe.to_string_lossy(), path)
+                } else if Self::is_bin_available("code") {
+                    Self::launch_detached_editor("code", path)
+                } else {
+                    Err("Visual Studio Code executable not found. Ensure VS Code is installed.".into())
+                }
+            }
             "antigravity" => {
-                // Look strictly for Antigravity IDE GUI executables
-                let candidate1 = std::env::var("LOCALAPPDATA")
-                    .map(|la| Path::new(&la).join("Programs").join("Antigravity").join("Antigravity.exe"))
-                    .ok();
-                let candidate2 = std::env::var("LOCALAPPDATA")
-                    .map(|la| Path::new(&la).join("Programs").join("Antigravity IDE").join("Antigravity.exe"))
-                    .ok();
-                let candidate3 = Path::new(r"C:\Program Files\Antigravity\Antigravity.exe");
-
-                if let Some(c) = candidate1.filter(|p| p.exists()) {
-                    Self::launch_detached_editor(&c.to_string_lossy(), path)
-                } else if let Some(c) = candidate2.filter(|p| p.exists()) {
-                    Self::launch_detached_editor(&c.to_string_lossy(), path)
-                } else if candidate3.exists() {
-                    Self::launch_detached_editor(&candidate3.to_string_lossy(), path)
+                if let Some(exe) = Self::resolve_gui_binary("antigravity") {
+                    Self::launch_detached_editor(&exe.to_string_lossy(), path)
                 } else if Self::is_bin_available("antigravity") {
                     Self::launch_detached_editor("antigravity", path)
                 } else {
                     Err("Antigravity IDE executable not found. Ensure Antigravity IDE is installed.".into())
                 }
             }
-            "vscode" | "code" => Self::launch_detached_editor("code", path),
-            "cursor" => Self::launch_detached_editor("cursor", path),
-            "windsurf" => Self::launch_detached_editor("windsurf", path),
+            "cursor" => {
+                if let Some(exe) = Self::resolve_gui_binary("cursor") {
+                    Self::launch_detached_editor(&exe.to_string_lossy(), path)
+                } else if Self::is_bin_available("cursor") {
+                    Self::launch_detached_editor("cursor", path)
+                } else {
+                    Err("Cursor executable not found. Ensure Cursor is installed.".into())
+                }
+            }
+            "windsurf" => {
+                if let Some(exe) = Self::resolve_gui_binary("windsurf") {
+                    Self::launch_detached_editor(&exe.to_string_lossy(), path)
+                } else if Self::is_bin_available("windsurf") {
+                    Self::launch_detached_editor("windsurf", path)
+                } else {
+                    Err("Windsurf executable not found. Ensure Windsurf is installed.".into())
+                }
+            }
             "wt" => Self::open_in_terminal("wt", path),
             unknown => Err(format!("Unsupported editor identifier: {}", unknown)),
         }
@@ -489,16 +655,32 @@ impl GitService {
     fn launch_detached_editor(bin: &str, path: &str) -> Result<(), String> {
         #[cfg(target_os = "windows")]
         {
-            let mut cmd = Command::new("cmd");
-            cmd.args(&["/C", "start", "", bin, path]);
+            // 1. Try spawning directly with CREATE_NO_WINDOW and detached Stdio (instantaneous for .exe GUI apps)
+            let mut cmd = Command::new(bin);
+            cmd.arg(path);
+            cmd.stdin(Stdio::null());
+            cmd.stdout(Stdio::null());
+            cmd.stderr(Stdio::null());
             cmd.creation_flags(CREATE_NO_WINDOW);
-            cmd.spawn().map_err(|e| format!("Failed to launch {}: {}", bin, e))?;
+            if cmd.spawn().is_ok() {
+                return Ok(());
+            }
+
+            // 2. Fallback: spawn via cmd /C start if bin is a batch/shell script
+            let mut fallback = Command::new("cmd");
+            fallback.args(&["/C", "start", "", bin, path]);
+            fallback.stdin(Stdio::null());
+            fallback.stdout(Stdio::null());
+            fallback.stderr(Stdio::null());
+            fallback.creation_flags(CREATE_NO_WINDOW);
+            fallback.spawn().map_err(|e| format!("Failed to launch {}: {}", bin, e))?;
+            Ok(())
         }
         #[cfg(not(target_os = "windows"))]
         {
             Command::new(bin).arg(path).spawn().map_err(|e| format!("Failed to launch {}: {}", bin, e))?;
+            Ok(())
         }
-        Ok(())
     }
 
     /// Checks if a binary command exists in the system PATH.
@@ -535,47 +717,8 @@ impl GitService {
             .map(|(id, name, bin, icon)| {
                 let available = if id == "explorer" {
                     true
-                } else if id == "antigravity" {
-                    std::env::var("LOCALAPPDATA")
-                        .map(|la| {
-                            Path::new(&la)
-                                .join("Programs")
-                                .join("Antigravity")
-                                .join("Antigravity.exe")
-                                .exists()
-                                || Path::new(&la)
-                                    .join("Programs")
-                                    .join("Antigravity IDE")
-                                    .join("Antigravity.exe")
-                                    .exists()
-                        })
-                        .unwrap_or(false)
-                        || Path::new(r"C:\Program Files\Antigravity\Antigravity.exe").exists()
-                        || Self::is_bin_available("antigravity")
-                } else if id == "cursor" {
-                    Self::is_bin_available("cursor")
-                        || std::env::var("LOCALAPPDATA")
-                            .map(|la| {
-                                Path::new(&la)
-                                    .join("Programs")
-                                    .join("cursor")
-                                    .join("Cursor.exe")
-                                    .exists()
-                            })
-                            .unwrap_or(false)
-                } else if id == "windsurf" {
-                    Self::is_bin_available("windsurf")
-                        || std::env::var("LOCALAPPDATA")
-                            .map(|la| {
-                                Path::new(&la)
-                                    .join("Programs")
-                                    .join("windsurf")
-                                    .join("Windsurf.exe")
-                                    .exists()
-                            })
-                            .unwrap_or(false)
                 } else {
-                    Self::is_bin_available(bin)
+                    Self::resolve_gui_binary(id).is_some() || Self::is_bin_available(bin)
                 };
 
                 EditorInfo {
@@ -861,6 +1004,21 @@ bare
     fn test_suggest_worktree_path_sanitization() {
         let res = GitService::suggest_worktree_path("C:/Repos/app", "feat/cool-feature").unwrap();
         assert!(res.suggested_path.contains("app-feat-cool-feature"));
+    }
+
+    #[test]
+    fn test_detect_installed_editors() {
+        let editors = GitService::detect_installed_editors();
+        assert!(!editors.is_empty());
+        // Explorer should always be available
+        let explorer = editors.iter().find(|e| e.id == "explorer");
+        assert!(explorer.is_some());
+        assert!(explorer.unwrap().is_available);
+    }
+
+    #[test]
+    fn test_resolve_gui_binary_explorer_or_invalid() {
+        assert!(GitService::resolve_gui_binary("non_existent_editor_123").is_none());
     }
 }
 
