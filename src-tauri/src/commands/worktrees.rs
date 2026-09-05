@@ -13,7 +13,9 @@ use tauri::{AppHandle, Emitter};
 pub async fn get_worktree_diff_summary(
     worktree_path: String,
 ) -> Result<WorktreeDiffSummary, String> {
-    GitService::get_diff_summary(&worktree_path)
+    tauri::async_runtime::spawn_blocking(move || GitService::get_diff_summary(&worktree_path))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -58,7 +60,11 @@ pub async fn remove_worktree(
     worktree_path: String,
     force: bool,
 ) -> Result<String, String> {
-    WorktreeCleanerService::remove_worktree(&repo_path, &worktree_path, force)
+    tauri::async_runtime::spawn_blocking(move || {
+        WorktreeCleanerService::remove_worktree(&repo_path, &worktree_path, force)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -74,7 +80,9 @@ pub async fn remove_worktrees_batch(
 
 #[tauri::command]
 pub async fn prune_worktrees(repo_path: String) -> Result<String, String> {
-    WorktreeCleanerService::prune_worktrees(&repo_path)
+    tauri::async_runtime::spawn_blocking(move || WorktreeCleanerService::prune_worktrees(&repo_path))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -102,7 +110,11 @@ pub async fn list_branches(
     repo_path: String,
     worktree_path: String,
 ) -> Result<WorktreeBranchesResponse, String> {
-    GitService::list_branches_for_worktree(&repo_path, &worktree_path)
+    tauri::async_runtime::spawn_blocking(move || {
+        GitService::list_branches_for_worktree(&repo_path, &worktree_path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -110,7 +122,16 @@ pub async fn checkout_worktree_branch(
     worktree_path: String,
     target_branch: String,
 ) -> Result<CheckoutBranchResult, String> {
-    GitService::checkout_worktree_branch(&worktree_path, &target_branch)
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut result = GitService::checkout_worktree_branch(&worktree_path, &target_branch)?;
+        // No separate repo root is available here, but any worktree path works equally well as
+        // the working directory for the repo-wide `worktree list`/orphan-context git calls.
+        result.worktree_info =
+            WorktreeCleanerService::build_single_worktree_info(&worktree_path, &worktree_path)?;
+        Ok(result)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -118,7 +139,11 @@ pub async fn suggest_worktree_path(
     repo_path: String,
     branch_name: String,
 ) -> Result<SuggestWorktreePathResult, String> {
-    GitService::suggest_worktree_path(&repo_path, &branch_name)
+    tauri::async_runtime::spawn_blocking(move || {
+        GitService::suggest_worktree_path(&repo_path, &branch_name)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -128,5 +153,17 @@ pub async fn create_worktree(
     base_branch: String,
     new_branch_name: Option<String>,
 ) -> Result<CreateWorktreeResult, String> {
-    GitService::create_worktree(&repo_path, &target_path, &base_branch, new_branch_name.as_deref())
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut result = GitService::create_worktree(
+            &repo_path,
+            &target_path,
+            &base_branch,
+            new_branch_name.as_deref(),
+        )?;
+        result.worktree_info =
+            WorktreeCleanerService::build_single_worktree_info(&repo_path, &target_path)?;
+        Ok(result)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

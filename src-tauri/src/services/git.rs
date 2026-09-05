@@ -9,7 +9,7 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct WorktreeEntry {
     pub path: String,
     pub head: String,
@@ -83,6 +83,7 @@ pub struct CheckoutBranchResult {
     pub new_branch: String,
     pub head_sha: String,
     pub message: String,
+    pub worktree_info: WorktreeEntry,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,6 +100,19 @@ pub struct CreateWorktreeResult {
     pub worktree_path: String,
     pub branch_name: String,
     pub message: String,
+    pub worktree_info: WorktreeEntry,
+}
+
+/// Repo-wide git state needed to evaluate whether a branch is orphaned. `check_orphan_status`
+/// used to recompute all of this (the default branch, `branch -vv`, `branch --merged`) from
+/// scratch for every worktree, even though the answer is identical for every worktree in the
+/// same repo. Computing it once per repo via `build_repo_orphan_context` and passing it in here
+/// cuts a repo with N worktrees from ~5N git subprocesses down to ~5.
+#[derive(Debug, Clone)]
+pub struct RepoOrphanContext {
+    pub default_branch: String,
+    pub branch_vv_output: String,
+    pub merged_branches_output: String,
 }
 
 pub struct GitService;
@@ -308,33 +322,46 @@ impl GitService {
         }
     }
 
-    /// Checks if a branch is merged into the main/default branch or marked as `[gone]` in upstream.
-    pub fn check_orphan_status<P: AsRef<Path>>(
-        repo_root: P,
+    /// Computes the repo-wide state needed for orphan-status checks exactly once per repository.
+    /// See `RepoOrphanContext` for why this must not be recomputed per worktree.
+    pub fn build_repo_orphan_context<P: AsRef<Path>>(repo_root: P) -> RepoOrphanContext {
+        let default_branch =
+            Self::get_default_branch(&repo_root).unwrap_or_else(|| "main".to_string());
+        let branch_vv_output = Self::run_git(&repo_root, &["branch", "-vv"]).unwrap_or_default();
+        let merged_branches_output =
+            Self::run_git(&repo_root, &["branch", "--merged", &default_branch]).unwrap_or_default();
+
+        RepoOrphanContext {
+            default_branch,
+            branch_vv_output,
+            merged_branches_output,
+        }
+    }
+
+    /// Checks if a branch is merged into the default branch or marked as `[gone]` in upstream,
+    /// using a `RepoOrphanContext` precomputed once per repository instead of shelling out to
+    /// git again for every worktree.
+    pub fn check_orphan_status(
         branch_ref: &str,
+        context: &RepoOrphanContext,
     ) -> (bool, Option<String>) {
         let short_branch = branch_ref.replace("refs/heads/", "");
 
         // Check if upstream branch is gone (git branch -vv)
-        if let Ok(branch_vv) = Self::run_git(&repo_root, &["branch", "-vv"]) {
-            for line in branch_vv.lines() {
-                let trimmed = line.trim().trim_start_matches('*').trim();
-                let branch_token = trimmed.split_whitespace().next().unwrap_or("");
-                if branch_token == short_branch && line.contains(": gone]") {
-                    return (true, Some("Upstream remote branch was deleted".to_string()));
-                }
+        for line in context.branch_vv_output.lines() {
+            let trimmed = line.trim().trim_start_matches('*').trim();
+            let branch_token = trimmed.split_whitespace().next().unwrap_or("");
+            if branch_token == short_branch && line.contains(": gone]") {
+                return (true, Some("Upstream remote branch was deleted".to_string()));
             }
         }
 
-        // Check if merged into main or master
-        let default_branch = Self::get_default_branch(&repo_root).unwrap_or_else(|| "main".to_string());
-        if short_branch != default_branch && short_branch != "master" {
-            if let Ok(merged_branches) = Self::run_git(&repo_root, &["branch", "--merged", &default_branch]) {
-                for line in merged_branches.lines() {
-                    let cleaned = line.trim().trim_start_matches('*').trim();
-                    if cleaned == short_branch {
-                        return (true, Some(format!("Merged into {}", default_branch)));
-                    }
+        // Check if merged into the default branch
+        if short_branch != context.default_branch && short_branch != "master" {
+            for line in context.merged_branches_output.lines() {
+                let cleaned = line.trim().trim_start_matches('*').trim();
+                if cleaned == short_branch {
+                    return (true, Some(format!("Merged into {}", context.default_branch)));
                 }
             }
         }
@@ -866,6 +893,9 @@ impl GitService {
             new_branch: target_branch.to_string(),
             head_sha,
             message: output,
+            // Filled in by the command layer via WorktreeCleanerService::build_single_worktree_info;
+            // GitService cannot call it directly without a circular dependency on that module.
+            worktree_info: WorktreeEntry::default(),
         })
     }
 
@@ -960,6 +990,9 @@ impl GitService {
             worktree_path: target_path.to_string(),
             branch_name: branch_created,
             message: format!("Successfully created worktree at '{}'", target_path),
+            // Filled in by the command layer via WorktreeCleanerService::build_single_worktree_info;
+            // GitService cannot call it directly without a circular dependency on that module.
+            worktree_info: WorktreeEntry::default(),
         })
     }
 }

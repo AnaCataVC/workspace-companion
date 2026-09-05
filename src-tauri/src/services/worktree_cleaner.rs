@@ -1,5 +1,5 @@
-use crate::services::config::{AppConfig, ConfigService};
-use crate::services::git::{GitService, WorktreeEntry};
+use crate::services::config::{AppConfig, ConfigService, WatchFolder};
+use crate::services::git::{GitService, RepoOrphanContext, WorktreeEntry};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -90,61 +90,21 @@ impl WorktreeCleanerService {
         let mut results = Vec::new();
         let mut seen_paths = HashSet::new();
 
-        // 1. If watch folders exist, scan each enabled path recursively up to max_depth (1..5)
-        for watch in &config.watch_folders {
-            if !watch.enabled {
-                continue;
-            }
+        // 1. If watch folders exist, scan each enabled path recursively up to max_depth (1..5).
+        // Each watch folder is walked independently, so the folder-level walk is parallelized
+        // with rayon; cross-folder de-duplication still happens sequentially afterwards.
+        let enabled_watches: Vec<&WatchFolder> =
+            config.watch_folders.iter().filter(|w| w.enabled).collect();
 
-            let base_path = ConfigService::expand_path(&watch.path);
-            if !base_path.exists() {
-                continue;
-            }
+        let per_watch_results: Vec<Vec<DiscoveredRepo>> = enabled_watches
+            .par_iter()
+            .map(|watch| Self::discover_repos_in_watch_folder(watch))
+            .collect();
 
-            // Direct check if watch folder itself is a Git repository
-            if Self::is_git_repo(&base_path) {
-                let canonical = base_path
-                    .canonicalize()
-                    .unwrap_or_else(|_| base_path.clone());
-                if seen_paths.insert(canonical) {
-                    results.push(DiscoveredRepo {
-                        path: base_path.clone(),
-                        associated_account: watch.account_username.clone(),
-                        watch_folder_path: Some(watch.path.clone()),
-                    });
-                }
-                continue;
-            }
-
-            if !base_path.is_dir() {
-                continue;
-            }
-
-            let max_depth = (watch.max_depth.clamp(1, 5)) as usize;
-            let mut it = WalkDir::new(&base_path)
-                .max_depth(max_depth)
-                .into_iter()
-                .filter_entry(|e| !Self::should_skip_dir(e));
-
-            while let Some(Ok(entry)) = it.next() {
-                let path = entry.path();
-                if entry.file_type().is_dir() {
-                    if Self::is_git_repo(path) {
-                        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-                        if seen_paths.insert(canonical) {
-                            results.push(DiscoveredRepo {
-                                path: path.to_path_buf(),
-                                associated_account: watch.account_username.clone(),
-                                watch_folder_path: Some(watch.path.clone()),
-                            });
-                        }
-                        // Stop deeper descent inside this Git repository
-                        it.skip_current_dir();
-                    } else if path.join(".git").is_file() {
-                        // Skip descending into linked worktrees or submodules
-                        it.skip_current_dir();
-                    }
-                }
+        for repo in per_watch_results.into_iter().flatten() {
+            let canonical = repo.path.canonicalize().unwrap_or_else(|_| repo.path.clone());
+            if seen_paths.insert(canonical) {
+                results.push(repo);
             }
         }
 
@@ -167,10 +127,70 @@ impl WorktreeCleanerService {
         results
     }
 
+    /// Walks a single watch folder for git repositories. Extracted out of `discover_repositories`
+    /// so each watch folder can be walked on its own rayon thread.
+    fn discover_repos_in_watch_folder(watch: &WatchFolder) -> Vec<DiscoveredRepo> {
+        let mut local_results = Vec::new();
+
+        let base_path = ConfigService::expand_path(&watch.path);
+        if !base_path.exists() {
+            return local_results;
+        }
+
+        // Direct check if watch folder itself is a Git repository
+        if Self::is_git_repo(&base_path) {
+            local_results.push(DiscoveredRepo {
+                path: base_path.clone(),
+                associated_account: watch.account_username.clone(),
+                watch_folder_path: Some(watch.path.clone()),
+            });
+            return local_results;
+        }
+
+        if !base_path.is_dir() {
+            return local_results;
+        }
+
+        let max_depth = (watch.max_depth.clamp(1, 5)) as usize;
+        let mut it = WalkDir::new(&base_path)
+            .max_depth(max_depth)
+            .into_iter()
+            .filter_entry(|e| !Self::should_skip_dir(e));
+
+        while let Some(Ok(entry)) = it.next() {
+            let path = entry.path();
+            if entry.file_type().is_dir() {
+                if Self::is_git_repo(path) {
+                    local_results.push(DiscoveredRepo {
+                        path: path.to_path_buf(),
+                        associated_account: watch.account_username.clone(),
+                        watch_folder_path: Some(watch.path.clone()),
+                    });
+                    // Stop deeper descent inside this Git repository
+                    it.skip_current_dir();
+                } else if path.join(".git").is_file() {
+                    // Skip descending into linked worktrees or submodules
+                    it.skip_current_dir();
+                }
+            }
+        }
+
+        local_results
+    }
+
     /// Checks if a directory is a Git repository root.
     pub fn is_git_repo<P: AsRef<Path>>(path: P) -> bool {
         let p = path.as_ref();
         p.join(".git").is_dir()
+    }
+
+    /// Marks the first entry of a `git worktree list --porcelain` parse as the main worktree.
+    /// Git always lists the main/root worktree first, before any linked worktrees. Shared by
+    /// `scan_repository` and `build_single_worktree_info` so both agree on how it's identified.
+    fn mark_main_worktree(worktrees: &mut [WorktreeEntry]) {
+        if let Some(first) = worktrees.first_mut() {
+            first.is_main = true;
+        }
     }
 
     /// Scans a repository and extracts its worktrees with rich status metadata and account tagging.
@@ -196,43 +216,19 @@ impl WorktreeCleanerService {
         };
 
         let mut worktrees = GitService::parse_worktree_porcelain(&raw_worktrees);
+        Self::mark_main_worktree(&mut worktrees);
 
-        // Mark the root/main worktree (index 0 of git worktree list --porcelain)
-        if let Some(first) = worktrees.first_mut() {
-            first.is_main = true;
-        }
+        // The default branch, `branch -vv`, and `branch --merged` are identical no matter which
+        // worktree in this repo is being checked, so this is computed once per repo instead of
+        // once per worktree (see `RepoOrphanContext`).
+        let orphan_context = GitService::build_repo_orphan_context(path);
 
-        // Enrich each worktree with dirty status, orphan status, and commit info
-        for wt in &mut worktrees {
-            let wt_path = Path::new(&wt.path);
-
-            // Commit info
-            let (msg, author, date) = GitService::get_last_commit_info(wt_path);
-            wt.last_commit_message = msg;
-            wt.last_commit_author = author;
-            wt.last_commit_date = date;
-
-            // Dirty status
-            let (is_dirty, uncommitted_count) = GitService::check_dirty_status(wt_path);
-            wt.is_dirty = is_dirty;
-            wt.uncommitted_files_count = if is_dirty {
-                Some(uncommitted_count)
-            } else {
-                None
-            };
-
-            // Orphan status (Root/main worktrees are never orphaned worktrees)
-            if !wt.is_main {
-                if let Some(branch_ref) = &wt.branch {
-                    let (is_orphan, reason) = GitService::check_orphan_status(path, branch_ref);
-                    wt.is_orphaned = is_orphan;
-                    wt.orphan_reason = reason;
-                }
-            } else {
-                wt.is_orphaned = false;
-                wt.orphan_reason = None;
-            }
-        }
+        // Enrich each worktree with dirty status, orphan status, and commit info. With the
+        // repo-wide git calls hoisted out above, the remaining per-worktree work is cheap enough
+        // to parallelize across worktrees.
+        worktrees
+            .par_iter_mut()
+            .for_each(|wt| Self::enrich_worktree_info(wt, &orphan_context));
 
         Some(RepositoryWorktrees {
             repo_path: path.to_string_lossy().to_string(),
@@ -241,6 +237,74 @@ impl WorktreeCleanerService {
             watch_folder_path,
             worktrees,
         })
+    }
+
+    /// Enriches a single worktree entry with last-commit info, dirty status, and orphan status.
+    /// Shared by the per-repo scan loop in `scan_repository` and by `build_single_worktree_info`,
+    /// so both code paths compute a worktree's status the same way.
+    fn enrich_worktree_info(worktree: &mut WorktreeEntry, orphan_context: &RepoOrphanContext) {
+        let wt_path = Path::new(&worktree.path);
+
+        // Commit info
+        let (msg, author, date) = GitService::get_last_commit_info(wt_path);
+        worktree.last_commit_message = msg;
+        worktree.last_commit_author = author;
+        worktree.last_commit_date = date;
+
+        // Dirty status
+        let (is_dirty, uncommitted_count) = GitService::check_dirty_status(wt_path);
+        worktree.is_dirty = is_dirty;
+        worktree.uncommitted_files_count = if is_dirty {
+            Some(uncommitted_count)
+        } else {
+            None
+        };
+
+        // Orphan status (Root/main worktrees are never orphaned worktrees)
+        if !worktree.is_main {
+            if let Some(branch_ref) = &worktree.branch {
+                let (is_orphan, reason) = GitService::check_orphan_status(branch_ref, orphan_context);
+                worktree.is_orphaned = is_orphan;
+                worktree.orphan_reason = reason;
+            }
+        } else {
+            worktree.is_orphaned = false;
+            worktree.orphan_reason = None;
+        }
+    }
+
+    /// Builds a fresh `WorktreeEntry` for a single worktree path without rescanning the whole
+    /// repository. Used after `create_worktree`/`checkout_worktree_branch` so the frontend can
+    /// patch just the affected worktree into its in-memory list instead of triggering a full
+    /// repo rescan.
+    pub fn build_single_worktree_info(
+        repo_path: &str,
+        worktree_path: &str,
+    ) -> Result<WorktreeEntry, String> {
+        let repo_root = Path::new(repo_path);
+        let raw_worktrees = GitService::run_git(repo_root, &["worktree", "list", "--porcelain"])?;
+        let mut worktrees = GitService::parse_worktree_porcelain(&raw_worktrees);
+        Self::mark_main_worktree(&mut worktrees);
+
+        let target_canonical = Path::new(worktree_path)
+            .canonicalize()
+            .unwrap_or_else(|_| PathBuf::from(worktree_path));
+
+        let mut worktree = worktrees
+            .into_iter()
+            .find(|wt| {
+                let entry_canonical = Path::new(&wt.path)
+                    .canonicalize()
+                    .unwrap_or_else(|_| PathBuf::from(&wt.path));
+                entry_canonical == target_canonical
+            })
+            .ok_or_else(|| format!("Worktree not found at path: {}", worktree_path))?;
+
+        // Cheap here: unlike the repo-wide scan loop, only one worktree needs this context.
+        let orphan_context = GitService::build_repo_orphan_context(repo_root);
+        Self::enrich_worktree_info(&mut worktree, &orphan_context);
+
+        Ok(worktree)
     }
 
     /// Removes a worktree safely.
