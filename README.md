@@ -47,6 +47,7 @@ For a comprehensive breakdown of all toolbar buttons, status indicators, and vie
 - **IDE vs. CLI Disambiguation**: Differentiating between GUI desktop applications (e.g. `Antigravity.exe`) and command-line companion utilities (`agy.exe`) ensures predictable workspace launching.
 - **Resilient Configuration Migration**: Using `#[serde(default)]` in Rust and nullish coalescing in TypeScript guarantees zero data loss and prevents deserialization crashes when extending configuration schemas.
 - **Safety Guardrails in Tooling**: Automating `git worktree remove` demands pre-flight dirty checks (`git status --porcelain`) before triggering destructive actions.
+- **Repo-Wide Context Caching & Delta-Patch Updates**: Computing orphan-detection facts (default branch, `branch -vv`, `branch --merged`) once per repository instead of once per worktree cuts subprocess spawns roughly 5x on multi-worktree repos; patching the in-memory worktree list after a single mutation — instead of re-scanning every watched folder — keeps the UI from flashing empty and avoids paying that cost for a one-worktree change.
 
 ---
 
@@ -93,6 +94,7 @@ npm run build
   - [ADR 0002: Windows Subprocess Creation Flag](docs/adr/0002-windows-subprocess-no-window-flag.md)
   - [ADR 0003: Git Porcelain Protocol & Pre-flight Safety](docs/adr/0003-git-porcelain-preflight-safety.md)
   - [ADR 0004: Dual IDE & Terminal Separation and Subprocess Launcher Hardening](docs/adr/0004-ide-terminal-separation-and-subprocess-hardening.md)
+  - [ADR 0005: Delta-Patch State Updates and Repo-Wide Context Caching Over Full Rescans](docs/adr/0005-delta-patch-state-and-repo-context-caching.md)
 - 🤝 [Contributing Guidelines](CONTRIBUTING.md)
 
 ---
@@ -133,6 +135,7 @@ Para conocer el desglose detallado de todos los botones de la barra de herramien
 - **Disambiguación entre IDE y CLI**: Diferenciar entre aplicaciones GUI de escritorio (ej. `Antigravity.exe`) y utilidades CLI auxiliares (`agy.exe`) para un lanzamiento predecible del espacio de trabajo.
 - **Migración resiliente de configuración**: Uso de `#[serde(default)]` en Rust y nullish coalescing en TypeScript para garantizar compatibilidad hacia atrás total y prevenir fallos de deserialización al extender el esquema de configuración.
 - **Guardas de seguridad en herramientas destructivas**: Validación preventiva obligatoria (`git status --porcelain`) antes de ejecutar `git worktree remove`.
+- **Caché de contexto por repositorio y actualizaciones parciales**: Calcular los datos de detección de huérfanos (rama por defecto, `branch -vv`, `branch --merged`) una sola vez por repositorio, en vez de una vez por worktree, reduce ~5x los subprocesos lanzados en repos con varios worktrees; parchar la lista de worktrees en memoria tras una sola mutación —en vez de re-escanear todas las carpetas vigiladas— evita que la interfaz se vea vacía por un instante y evita pagar ese costo por el cambio de un solo worktree.
 
 ---
 
@@ -160,4 +163,5 @@ npx tauri dev
   - [ADR 0002: Flag Win32 de Creación de Subprocesos](docs/adr/0002-windows-subprocess-no-window-flag.md)
   - [ADR 0003: Protocolo Git Porcelain y Guardas de Seguridad](docs/adr/0003-git-porcelain-preflight-safety.md)
   - [ADR 0004: Separación Dual de IDE y Terminal y Endurecimiento de Subprocesos](docs/adr/0004-ide-terminal-separation-and-subprocess-hardening.md)
+  - [ADR 0005: Actualizaciones Parciales de Estado y Caché de Contexto por Repositorio](docs/adr/0005-delta-patch-state-and-repo-context-caching.md)
 - 🤝 [Guía de Contribución](CONTRIBUTING.md)

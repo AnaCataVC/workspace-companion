@@ -71,6 +71,7 @@ You can switch between view layouts using the **View Mode** toggle button (`▤ 
 - Card-based layout with two distinct rows per worktree.
 - Displays multi-select checkboxes, commit hash (`HEAD`), last commit message, and full branch name badges.
 - Features an expanded IDE selector dropdown menu for launching non-default code editors on demand.
+- Same 1-Click Action Dock as the Compact view: Windows Terminal, File Explorer, and a dirty-file diff popover on hover — no action is exclusive to either view.
 
 ---
 
@@ -97,4 +98,18 @@ When cleaning up multiple feature worktrees or stale AI agent worktrees:
 At the bottom of each repository section:
 1. Type a new branch name into the **`+ Fast Worktree: branch-name`** field.
 2. Press `Enter` or click **`⚡ Create & Launch`**.
-3. In under 500ms, the tool creates the Git worktree, checks out the branch, and launches your configured IDE.
+3. In under 500ms, the tool creates the Git worktree, checks out the branch, and launches your configured IDE. The new worktree is appended straight into the list — no rescan, no flash.
+
+---
+
+## 7. Keyboard Shortcuts
+
+Workspace Companion is designed to be operated without leaving the keyboard:
+
+| Shortcut | Context | Action |
+| :--- | :--- | :--- |
+| `Ctrl+Shift+W` | Global | Toggle the floating window |
+| `Escape` | Any open modal | Close it (Branch Switcher, New Worktree, Watched Folders, Orphan Cleaner, Batch Delete, GitHub Account) |
+| `↑` / `↓` | Branch Switcher Modal | Move the highlighted branch |
+| `Enter` | Branch Switcher Modal | Checkout the highlighted branch |
+| `Enter` / `Escape` | Fast Worktree Creator & New Worktree Modal branch field | Create now / clear and collapse |

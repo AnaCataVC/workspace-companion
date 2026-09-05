@@ -39,16 +39,21 @@ The Rust backend handles low-level OS interactions, system tray lifecycle, and s
    - Provides decoupled, zero-console launchers:
      - `open_in_editor`: Resolves native Win32 GUI executables directly via `resolve_gui_binary` (inspecting User `%LOCALAPPDATA%`, System `%ProgramFiles%`, Insiders, and dynamic PATH parent un-nesting) to launch VS Code (`Code.exe`), Antigravity IDE (`Antigravity.exe`), Cursor (`Cursor.exe`), or Windsurf (`Windsurf.exe`) instantly with 0 console windows.
      - `open_in_terminal`: Dispatches to terminal environments (Windows Terminal `wt`, PowerShell, CMD, Git Bash, AGY CLI) with fallback cascade.
-   - Leverages `rayon` for parallel repository discovery across configured watch folders.
+   - `CreateWorktreeResult`/`CheckoutBranchResult` carry a fully-enriched `worktree_info` for the one worktree they affected, letting the frontend patch its list in place instead of re-scanning (see ADR 0005).
+   - Every command handler that shells out to `git` runs its blocking work inside `tauri::async_runtime::spawn_blocking`, so a slow subprocess never stalls a Tokio worker thread handling other IPC calls.
 
 3. **GitHub CLI Service (`services/gh.rs`)**:
    - Queries authenticated GitHub accounts via `gh auth status`.
    - Switches active identities seamlessly via `gh auth switch --hostname github.com -u <user>`.
+   - Invoked concurrently with, and never blocking, editor/terminal launches and worktree creation — `gh`'s auth state is a config file read fresh at call time, not something the launch action needs to wait on.
 
 4. **Orphaned Worktree Cleaner (`services/worktree_cleaner.rs`)**:
    - Compares local worktree branches against remote upstream tracking branches.
    - Identifies branches deleted or merged on the remote.
    - Enforces pre-flight dirty checks (`git status --porcelain`) to guarantee no uncommitted work is deleted.
+   - Computes the repo-wide orphan context (default branch, `branch -vv`, `branch --merged`) once per repository (`build_repo_orphan_context`) and reuses it for every worktree in that repo, instead of recomputing it per worktree.
+   - Per-worktree enrichment (`enrich_worktree_info`: dirty check, last-commit info, orphan check) runs in parallel across a repository's worktrees via `rayon::par_iter_mut`, and is also reachable standalone through `build_single_worktree_info` for a single worktree path.
+   - Leverages `rayon` for parallel repository discovery across configured watch folders and parallel per-repo scanning.
 
 5. **Configuration Service (`services/config.rs`)**:
    - Manages user preferences, watched root folders, default editor, default terminal, and terminal button visibility.
@@ -64,17 +69,23 @@ The frontend is built with **Svelte 5** leveraging modern reactive stores and cl
 - `src/lib/components/`:
   - `Header.svelte`: Top bar with GitHub active account badge, search bar, and action triggers.
   - `AccountFilterBar.svelte`: Filter worktrees by GitHub profile / organization.
-  - `WorktreeList.svelte`, `WorktreeCard.svelte` & `WorktreeItemRow.svelte`: Worktree list components displaying branch details, status badges, lock indicators, and 1-click IDE/Terminal launchers.
+  - `WorktreeList.svelte`, `WorktreeCard.svelte` & `WorktreeItemRow.svelte`: Worktree list components displaying branch details, status badges, lock indicators, and 1-click IDE/Terminal launchers. Both views share `DirtyDiffPopover.svelte` for the hover-triggered dirty-file diff, so neither view can drift out of parity with the other.
+  - `DirtyDiffPopover.svelte`: Lazy, debounced fetch-and-display of a worktree's uncommitted diff summary, reused by both the Compact and Detailed views.
   - `NewWorktreeModal.svelte`: Modal to create a new worktree from existing or new branches.
-  - `BranchSwitcherModal.svelte`: Quick switcher to checkout branches.
+  - `BranchSwitcherModal.svelte`: Quick switcher to checkout branches, with arrow-key + Enter keyboard navigation over the filtered branch list.
   - `OrphanCleanerModal.svelte`: Guided cleanup dialog with pre-flight safety summaries.
   - `WatchFoldersModal.svelte`: Configuration dialog for repository root scan paths, default IDE, and default terminal.
   - `GhAccountModal.svelte`: Account switcher modal.
+- `src/lib/actions/`:
+  - `closeOnEscape.ts`: Shared Svelte action wiring `Escape` to a modal's close handler (`{ enabled, onClose }`), used by every modal so Escape-to-close can't silently go missing from a new one.
 - `src/lib/stores/`:
   - `worktrees.ts`: Stores list of discovered worktrees and scanning states.
   - `ghAuth.ts`: Active GitHub account and switcher logic.
   - `appConfig.ts`: Application preferences, default editor, default terminal, and watch paths.
   - `editors.ts`: Installed editor (`installedEditors`) and terminal (`installedTerminals`) detection.
+
+### State Update Strategy
+`App.svelte` patches the `scannedRepos` store in place for single-worktree mutations (create, delete, branch switch) using the fresh `worktreeInfo` the backend returns for create/checkout, or the known path for delete — mirroring the pattern the batch-delete flow already used. A full rescan (`scan_worktrees`) is reserved for the manual Refresh action and as a defensive fallback if a mutation response doesn't carry `worktreeInfo`. See ADR 0005 for the reasoning.
 
 ---
 
