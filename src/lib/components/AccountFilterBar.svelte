@@ -15,11 +15,30 @@
     ])
   );
 
+  // Single-pass O(N) account tally, shared by every account pill instead of
+  // each pill re-filtering the full repo list (see statusCounts below for the same pattern)
+  $: accountStats = (() => {
+    const counts = new Map<string, number>();
+    let unassigned = 0;
+    const repos = $scannedRepos;
+
+    for (let i = 0; i < repos.length; i++) {
+      const acc = repos[i].associatedAccount;
+      if (acc) {
+        counts.set(acc, (counts.get(acc) || 0) + 1);
+      } else {
+        unassigned++;
+      }
+    }
+
+    return { counts, unassigned };
+  })();
+
   function getCountForAccount(acc: string): number {
-    return $scannedRepos.filter(r => r.associatedAccount === acc).length;
+    return accountStats.counts.get(acc) || 0;
   }
 
-  $: unassignedCount = $scannedRepos.filter(r => !r.associatedAccount).length;
+  $: unassignedCount = accountStats.unassigned;
 
   // Single-pass O(N) calculation for status filter counts within the selected account scope
   $: statusCounts = (() => {

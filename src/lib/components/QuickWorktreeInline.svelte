@@ -2,14 +2,14 @@
   import { Plus, Settings2, Loader2, CornerDownLeft, AlertCircle } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
-  import type { CreateWorktreeResult, SuggestWorktreePathResult, SupportedEditor } from '../types';
+  import type { CreateWorktreeResult, SuggestWorktreePathResult, SupportedEditor, WorktreeInfo } from '../types';
   import { appConfig } from '../stores/appConfig';
 
   export let repoPath: string;
   export let defaultBranch: string = 'main';
 
   const dispatch = createEventDispatcher<{
-    worktreeCreated: { worktreePath: string; branchName: string };
+    worktreeCreated: { repoPath: string; worktreeInfo?: WorktreeInfo };
     openAdvancedModal: string;
     openEditor: { editor: SupportedEditor; path: string };
   }>();
@@ -89,8 +89,8 @@
         
         dispatch('openEditor', { editor, path: createRes.worktreePath });
         dispatch('worktreeCreated', {
-          worktreePath: createRes.worktreePath,
-          branchName: createRes.branchName
+          repoPath,
+          worktreeInfo: createRes.worktreeInfo
         });
 
         // Reset

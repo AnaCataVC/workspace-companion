@@ -13,6 +13,7 @@
     Save,
     Settings2
   } from 'lucide-svelte';
+  import { closeOnEscape } from '../actions/closeOnEscape';
 
   export let isOpen: boolean = false;
   export let config: AppConfig;
@@ -68,15 +69,9 @@
     };
     dispatch('save', updatedConfig);
   }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape' && isOpen) {
-      dispatch('close');
-    }
-  }
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window use:closeOnEscape={{ enabled: () => isOpen, onClose: () => dispatch('close') }} />
 
 {#if isOpen}
   <div

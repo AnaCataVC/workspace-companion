@@ -2,6 +2,7 @@
   import type { WorktreeInfo } from '../types';
   import { AlertTriangle, Trash2, X, ShieldAlert } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
+  import { closeOnEscape } from '../actions/closeOnEscape';
 
   export let isOpen: boolean = false;
   export let worktree: WorktreeInfo | null = null;
@@ -29,6 +30,8 @@
     });
   }
 </script>
+
+<svelte:window use:closeOnEscape={{ enabled: () => isOpen, onClose: close }} />
 
 {#if isOpen && worktree}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-100">

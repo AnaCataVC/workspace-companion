@@ -131,6 +131,7 @@ export interface CheckoutBranchResult {
   newBranch: string;
   headSha: string;
   message: string;
+  worktreeInfo: WorktreeInfo;
 }
 
 export interface SuggestWorktreePathResult {
@@ -143,4 +144,5 @@ export interface CreateWorktreeResult {
   worktreePath: string;
   branchName: string;
   message: string;
+  worktreeInfo: WorktreeInfo;
 }

@@ -12,6 +12,7 @@
     Globe,
     GitCommit
   } from 'lucide-svelte';
+  import { closeOnEscape } from '../actions/closeOnEscape';
 
   export let isOpen: boolean = false;
   export let worktree: WorktreeInfo | null = null;
@@ -27,12 +28,29 @@
   }>();
 
   let searchQuery: string = '';
+  let highlightedIndex: number = 0;
+  let branchButtons: (HTMLButtonElement | null)[] = [];
 
   $: filteredBranches = (branchesResponse?.branches || []).filter(b => {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return true;
     return b.name.toLowerCase().includes(q) || b.shortName.toLowerCase().includes(q) || (b.lastCommitMessage && b.lastCommitMessage.toLowerCase().includes(q));
   });
+
+  // Reset the highlight to the top result whenever the search filter changes the visible set
+  $: {
+    searchQuery;
+    highlightedIndex = 0;
+  }
+
+  // Clamp defensively in case the list shrinks (e.g. branches reload) without the query changing
+  $: if (filteredBranches.length > 0 && highlightedIndex > filteredBranches.length - 1) {
+    highlightedIndex = filteredBranches.length - 1;
+  } else if (filteredBranches.length === 0) {
+    highlightedIndex = 0;
+  }
+
+  $: branchButtons[highlightedIndex]?.scrollIntoView({ block: 'nearest' });
 
   function getShortBranch(fullBranch: string | null): string {
     if (!fullBranch) return '(detached HEAD)';
@@ -50,13 +68,36 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape' && isOpen) {
-      dispatch('close');
+    if (!isOpen) return;
+
+    if (e.key === 'ArrowDown') {
+      if (filteredBranches.length === 0) return;
+      e.preventDefault();
+      highlightedIndex = (highlightedIndex + 1) % filteredBranches.length;
+      return;
+    }
+
+    if (e.key === 'ArrowUp') {
+      if (filteredBranches.length === 0) return;
+      e.preventDefault();
+      highlightedIndex = (highlightedIndex - 1 + filteredBranches.length) % filteredBranches.length;
+      return;
+    }
+
+    if (e.key === 'Enter') {
+      const branch = filteredBranches[highlightedIndex];
+      if (branch) {
+        e.preventDefault();
+        handleSelectBranch(branch);
+      }
     }
   }
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window
+  on:keydown={handleKeydown}
+  use:closeOnEscape={{ enabled: () => isOpen, onClose: () => dispatch('close') }}
+/>
 
 {#if isOpen && worktree}
   <div
@@ -132,9 +173,11 @@
             <span>No matching branches found</span>
           </div>
         {:else}
-          {#each filteredBranches as branch (branch.name)}
+          {#each filteredBranches as branch, idx (branch.name)}
             <button
+              bind:this={branchButtons[idx]}
               on:click={() => handleSelectBranch(branch)}
+              on:mouseenter={() => (highlightedIndex = idx)}
               disabled={branch.isCurrent || branch.isLockedByOther || isSwitching || (worktree.isDirty ?? false)}
               class="w-full text-left p-2 rounded-lg border transition-all flex items-center justify-between text-xs font-mono
                 {branch.isCurrent
@@ -143,7 +186,8 @@
                     ? 'bg-neutral-950/40 border-neutral-800/40 text-neutral-500 opacity-60 cursor-not-allowed'
                     : worktree.isDirty
                       ? 'bg-neutral-950/20 border-neutral-800/30 text-neutral-400 opacity-60 cursor-not-allowed'
-                      : 'bg-neutral-950/50 hover:bg-neutral-800 border-neutral-800/60 hover:border-neutral-700 text-neutral-200 cursor-pointer'}"
+                      : 'bg-neutral-950/50 hover:bg-neutral-800 border-neutral-800/60 hover:border-neutral-700 text-neutral-200 cursor-pointer'}
+                {idx === highlightedIndex ? 'ring-2 ring-indigo-500/80 ring-offset-1 ring-offset-neutral-900 border-indigo-500/60' : ''}"
             >
               <div class="flex items-center gap-2 min-w-0 flex-1">
                 {#if branch.isRemote}
@@ -196,7 +240,7 @@
       <!-- Footer -->
       <div class="pt-2 border-t border-neutral-800 flex items-center justify-between text-[11px] text-neutral-400">
         <span class="text-neutral-500 font-sans">
-          Click any available branch to switch
+          ↑↓ to navigate, Enter to switch
         </span>
         <button
           on:click={() => dispatch('close')}

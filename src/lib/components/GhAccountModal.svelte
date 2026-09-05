@@ -3,6 +3,7 @@
   import type { GhAccount } from '../types';
   import { Github, Check, X, RefreshCw } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
+  import { closeOnEscape } from '../actions/closeOnEscape';
 
   export let isOpen: boolean = false;
 
@@ -21,6 +22,8 @@
     dispatch('switchAccount', account.username);
   }
 </script>
+
+<svelte:window use:closeOnEscape={{ enabled: () => isOpen, onClose: close }} />
 
 {#if isOpen}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-100">

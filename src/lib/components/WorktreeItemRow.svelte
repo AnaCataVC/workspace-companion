@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { WorktreeInfo, SupportedEditor, SupportedTerminal, WorktreeDiffSummary } from '../types';
+  import type { WorktreeInfo, SupportedEditor, SupportedTerminal } from '../types';
   import {
     GitBranch,
     Folder,
@@ -12,14 +12,12 @@
     Terminal,
     ChevronDown,
     Bot,
-    Anchor,
-    Flame
+    Anchor
   } from 'lucide-svelte';
-  import { installedEditors } from '../stores/editors';
   import { batchSelection, selectedPaths } from '../stores/batchSelection';
   import { appConfig } from '../stores/appConfig';
   import { createEventDispatcher } from 'svelte';
-  import { invoke } from '@tauri-apps/api/core';
+  import DirtyDiffPopover from './DirtyDiffPopover.svelte';
 
   export let worktree: WorktreeInfo;
   export let repoPath: string = '';
@@ -39,9 +37,6 @@
   $: showTerminalBtn = ($appConfig.showTerminalButton !== false) && preferredTerminal !== 'none';
 
   let isHovered = false;
-  let showDiffPopover = false;
-  let diffSummary: WorktreeDiffSummary | null = null;
-  let isLoadingDiff = false;
 
   $: isSelected = $selectedPaths.has(worktree.path);
 
@@ -68,20 +63,6 @@
     return parts[parts.length - 1] || fullPath;
   }
 
-  async function handleMouseEnterDirty() {
-    if (!worktree.isDirty || diffSummary || isLoadingDiff) return;
-    isLoadingDiff = true;
-    try {
-      const res = await invoke<WorktreeDiffSummary>('get_worktree_diff_summary', {
-        worktreePath: worktree.path
-      });
-      diffSummary = res;
-    } catch (err) {
-      console.error('Failed to load worktree diff summary:', err);
-    } finally {
-      isLoadingDiff = false;
-    }
-  }
 </script>
 
 <div
@@ -93,10 +74,7 @@
       ? 'bg-indigo-950/20 hover:bg-indigo-950/35 border-indigo-900/40 hover:border-indigo-800/60 shadow-xs'
       : 'bg-neutral-900/60 hover:bg-neutral-850/90 border-neutral-800/60 hover:border-neutral-700/80'}"
   on:mouseenter={() => (isHovered = true)}
-  on:mouseleave={() => {
-    isHovered = false;
-    showDiffPopover = false;
-  }}
+  on:mouseleave={() => (isHovered = false)}
 >
   <!-- Left Side: Hierarchy Connector + Selection Checkbox + Branch / Name / Badges -->
   <div class="flex items-center gap-2 min-w-0 flex-1">
@@ -159,51 +137,13 @@
     <!-- Status Badges -->
     <div class="flex items-center gap-1 flex-shrink-0">
       {#if worktree.isDirty}
-        <div
-          class="relative"
-          role="group"
-          on:mouseenter={() => {
-            showDiffPopover = true;
-            handleMouseEnterDirty();
-          }}
-          on:mouseleave={() => (showDiffPopover = false)}
-        >
-          <span
-            class="px-1.5 py-0.5 rounded-full bg-rose-950/80 text-rose-300 border border-rose-800/60 text-[9px] font-sans flex items-center gap-0.5 cursor-pointer shadow-2xs"
-          >
-            <Flame size={9} class="text-rose-400 animate-pulse" />
-            {worktree.uncommittedFilesCount ? `${worktree.uncommittedFilesCount} dirty` : 'dirty'}
-          </span>
-
-          <!-- Lazy Diff Popover -->
-          {#if showDiffPopover}
-            <div
-              class="absolute left-0 bottom-full mb-1.5 z-40 w-64 p-2 rounded-lg bg-neutral-900 border border-neutral-700 shadow-2xl text-[11px] text-neutral-200 pointer-events-none"
-            >
-              <div class="font-semibold text-[10px] text-rose-400 mb-1 flex items-center justify-between border-b border-neutral-800 pb-1">
-                <span>Uncommitted Changes</span>
-                {#if isLoadingDiff}
-                  <span class="text-neutral-500 animate-pulse text-[9px]">Analyzing...</span>
-                {/if}
-              </div>
-
-              {#if diffSummary}
-                <p class="text-neutral-300 font-mono text-[10px] mb-1.5">
-                  {diffSummary.summaryText}
-                </p>
-                {#if diffSummary.modifiedFiles.length > 0}
-                  <div class="max-h-28 overflow-y-auto space-y-0.5 font-mono text-[9px] text-neutral-400">
-                    {#each diffSummary.modifiedFiles as file}
-                      <div class="truncate text-neutral-300">{file}</div>
-                    {/each}
-                  </div>
-                {/if}
-              {:else if !isLoadingDiff}
-                <span class="text-neutral-400 text-[10px]">Hovered to inspect git diff</span>
-              {/if}
-            </div>
-          {/if}
-        </div>
+        <DirtyDiffPopover
+          worktreePath={worktree.path}
+          label={worktree.uncommittedFilesCount ? `${worktree.uncommittedFilesCount} dirty` : 'dirty'}
+          badgeClass="px-1.5 py-0.5 rounded-full bg-rose-950/80 text-rose-300 border border-rose-800/60 text-[9px] font-sans flex items-center gap-0.5 cursor-pointer shadow-2xs"
+          iconSize={9}
+          popoverPositionClass="left-0 bottom-full mb-1.5"
+        />
       {/if}
 
       {#if worktree.isOrphaned}

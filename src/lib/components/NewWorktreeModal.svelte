@@ -11,6 +11,7 @@
     FolderGit2,
     Sparkles
   } from 'lucide-svelte';
+  import { closeOnEscape } from '../actions/closeOnEscape';
 
   export let isOpen: boolean = false;
   export let repositories: RepositoryWorktrees[] = [];
@@ -118,14 +119,19 @@
     }
   }
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape' && isOpen) {
+  function handleBranchInputKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleCreate();
+    } else if (e.key === 'Escape') {
+      // Prevent the closeOnEscape window listener from also firing for this same keypress
+      e.stopPropagation();
       dispatch('close');
     }
   }
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window use:closeOnEscape={{ enabled: () => isOpen, onClose: () => dispatch('close') }} />
 
 {#if isOpen}
   <div
@@ -212,6 +218,7 @@
               id="new-wt-branch-input"
               type="text"
               bind:value={newBranchName}
+              on:keydown={handleBranchInputKeydown}
               placeholder="e.g. feat/dashboard-redesign"
               class="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 font-mono focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
             />

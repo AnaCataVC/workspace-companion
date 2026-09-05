@@ -2,6 +2,7 @@
   import type { BatchDeleteTarget, BatchDeleteSummary } from '../types';
   import { Trash2, X, ShieldAlert, CheckCircle2, Flame, GitBranch } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
+  import { closeOnEscape } from '../actions/closeOnEscape';
 
   export let isOpen: boolean = false;
   export let targets: BatchDeleteTarget[] = [];
@@ -18,6 +19,10 @@
 
   $: hasDirty = targets.some((t) => Boolean(t.isDirty));
   $: dirtyCount = targets.filter((t) => Boolean(t.isDirty)).length;
+  // Mirrors the backend's skip-dirty-unless-forced rule (see worktree_cleaner.rs) so the button
+  // label reflects what will actually happen before the click, not just an intent to delete
+  $: willDeleteCount = forceDelete ? targets.length : targets.length - dirtyCount;
+  $: skippedCount = targets.length - willDeleteCount;
 
   function close() {
     if (isDeleting) return;
@@ -42,6 +47,8 @@
     return fullBranch.replace('refs/heads/', '');
   }
 </script>
+
+<svelte:window use:closeOnEscape={{ enabled: () => isOpen, onClose: close }} />
 
 {#if isOpen}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-100 select-none">
@@ -181,7 +188,7 @@
             <button
               type="button"
               on:click={handleConfirm}
-              disabled={isDeleting || (hasDirty && !forceDelete && targets.length === dirtyCount)}
+              disabled={isDeleting || willDeleteCount === 0}
               class="px-3.5 py-1.5 rounded-lg text-xs font-medium bg-rose-600 hover:bg-rose-500 disabled:opacity-40 disabled:hover:bg-rose-600 text-white transition-all flex items-center gap-1.5 shadow-lg shadow-rose-600/25"
             >
               {#if isDeleting}
@@ -189,7 +196,11 @@
                 <span>Removing {targets.length} worktrees...</span>
               {:else}
                 <Trash2 size={13} />
-                <span>Delete {targets.length} Worktrees</span>
+                {#if skippedCount > 0}
+                  <span>Delete {willDeleteCount} of {targets.length} (Skipping {skippedCount} dirty)</span>
+                {:else}
+                  <span>Delete {targets.length} Worktrees</span>
+                {/if}
               {/if}
             </button>
           </div>

@@ -119,10 +119,43 @@
         } as unknown as T;
       }
       if (cmd === 'create_worktree') {
-        return { success: true, worktreePath: args.targetPath, branchName: args.baseBranch, message: 'Worktree created' } as unknown as T;
+        return {
+          success: true,
+          worktreePath: args.targetPath,
+          branchName: args.newBranchName || args.baseBranch,
+          message: 'Worktree created',
+          worktreeInfo: {
+            path: args.targetPath,
+            head: '0000000',
+            branch: args.newBranchName || args.baseBranch,
+            bare: false,
+            locked: null,
+            prunable: null,
+            isMain: false,
+            isOrphaned: false,
+            isDirty: false,
+            uncommittedFilesCount: 0
+          }
+        } as unknown as T;
       }
       if (cmd === 'checkout_worktree_branch') {
-        return { success: true, newBranch: args.targetBranch, headSha: '1a2b3c4', message: 'Checked out' } as unknown as T;
+        return {
+          success: true,
+          newBranch: args.targetBranch,
+          headSha: '1a2b3c4',
+          message: 'Checked out',
+          worktreeInfo: {
+            path: args.worktreePath,
+            head: '1a2b3c4',
+            branch: args.targetBranch,
+            bare: false,
+            locked: null,
+            prunable: null,
+            isOrphaned: false,
+            isDirty: false,
+            uncommittedFilesCount: 0
+          }
+        } as unknown as T;
       }
       if (cmd === 'open_in_editor' || cmd === 'open_in_terminal' || cmd === 'switch_gh_account' || cmd === 'remove_worktree') {
         return { success: true } as unknown as T;
@@ -194,8 +227,8 @@
     try {
       await invokeTauri('switch_gh_account', { username: targetUser });
       await refreshGhAccounts();
-    } catch (err) {
-      console.error('Failed to switch GH account:', err);
+    } catch (err: any) {
+      notifications.error('Failed to switch GitHub account', err?.message || String(err));
     } finally {
       isGhLoading.set(false);
     }
@@ -215,24 +248,27 @@
     }
   }
 
-  async function handleOpenPath(event: CustomEvent<string>) {
+  function handleOpenPath(event: CustomEvent<string>) {
     const path = event.detail;
-    await ensureMatchingAccountForPath(path);
-    invokeTauri('open_path', { path });
+    ensureMatchingAccountForPath(path);
+    invokeTauri('open_path', { path }).catch((err: any) => {
+      notifications.error('Could not open folder', err?.message || String(err));
+    });
   }
 
-  async function handleOpenEditor(event: CustomEvent<{ editor: SupportedEditor; path: string }>) {
+  function handleOpenEditor(event: CustomEvent<{ editor: SupportedEditor; path: string }>) {
     const { editor, path } = event.detail;
-    await ensureMatchingAccountForPath(path);
+    // Account switch runs concurrently, not awaited: it must not delay the editor launch itself.
+    ensureMatchingAccountForPath(path);
     invokeTauri('open_in_editor', { editor, path }).catch((err: any) => {
       notifications.error(`Could not open editor (${editor})`, err?.message || String(err));
     });
   }
 
-  async function handleOpenTerminal(event: CustomEvent<{ terminal: SupportedTerminal; path: string }>) {
+  function handleOpenTerminal(event: CustomEvent<{ terminal: SupportedTerminal; path: string }>) {
     const { terminal, path } = event.detail;
     if (terminal === 'none') return;
-    await ensureMatchingAccountForPath(path);
+    ensureMatchingAccountForPath(path);
     invokeTauri('open_in_terminal', { terminal, path }).catch((err: any) => {
       notifications.error(`Could not open terminal (${terminal})`, err?.message || String(err));
     });
@@ -262,18 +298,32 @@
 
   async function handleConfirmSwitchBranch(event: CustomEvent<{ worktree: WorktreeInfo; targetBranch: string }>) {
     const { worktree, targetBranch } = event.detail;
+    const repoPath = selectedRepoForBranchSwitch;
     isSwitchingBranch = true;
     branchSwitchError = null;
 
+    ensureMatchingAccountForPath(worktree.path);
+
     try {
-      await ensureMatchingAccountForPath(worktree.path);
-      await invokeTauri<CheckoutBranchResult>('checkout_worktree_branch', {
+      const res = await invokeTauri<CheckoutBranchResult>('checkout_worktree_branch', {
         worktreePath: worktree.path,
         targetBranch
       });
       isBranchSwitcherOpen = false;
       selectedWorktreeForBranchSwitch = null;
-      await refreshWorktrees();
+
+      if (res?.worktreeInfo) {
+        const freshInfo = res.worktreeInfo;
+        scannedRepos.update((repos) =>
+          repos.map((r) =>
+            r.repoPath === repoPath
+              ? { ...r, worktrees: r.worktrees.map((w) => (w.path === worktree.path ? freshInfo : w)) }
+              : r
+          )
+        );
+      } else {
+        await refreshWorktrees();
+      }
     } catch (err: any) {
       branchSwitchError = err?.message || err?.toString() || 'Failed to switch branch';
     } finally {
@@ -311,17 +361,27 @@
   }>) {
     isCreatingWorktree = true;
     newWorktreeError = null;
+    const repoPath = event.detail.repoPath;
+
+    ensureMatchingAccountForPath(repoPath);
 
     try {
-      await ensureMatchingAccountForPath(event.detail.repoPath);
-      await invokeTauri<CreateWorktreeResult>('create_worktree', {
-        repoPath: event.detail.repoPath,
+      const res = await invokeTauri<CreateWorktreeResult>('create_worktree', {
+        repoPath,
         targetPath: event.detail.targetPath,
         baseBranch: event.detail.baseBranch,
         newBranchName: event.detail.newBranchName || null
       });
       isNewWorktreeOpen = false;
-      await refreshWorktrees();
+
+      if (res?.worktreeInfo) {
+        const freshInfo = res.worktreeInfo;
+        scannedRepos.update((repos) =>
+          repos.map((r) => (r.repoPath === repoPath ? { ...r, worktrees: [...r.worktrees, freshInfo] } : r))
+        );
+      } else {
+        await refreshWorktrees();
+      }
     } catch (err: any) {
       newWorktreeError = err?.message || err?.toString() || 'Failed to create worktree';
     } finally {
@@ -347,7 +407,16 @@
       });
       isDeleteModalOpen = false;
       selectedWorktreeForDelete = null;
-      await refreshWorktrees();
+
+      scannedRepos.update((repos) =>
+        repos
+          .map((r) =>
+            r.repoPath === repoPath
+              ? { ...r, worktrees: r.worktrees.filter((w) => w.path !== worktree.path) }
+              : r
+          )
+          .filter((r) => r.worktrees.length > 0)
+      );
     } catch (err: any) {
       notifications.error('Error deleting worktree', err?.message || String(err));
     } finally {
@@ -439,6 +508,17 @@
     isBatchDeleteModalOpen = true;
   }
 
+  function handleQuickWorktreeCreated(event: CustomEvent<{ repoPath: string; worktreeInfo?: WorktreeInfo }>) {
+    const { repoPath, worktreeInfo } = event.detail;
+    if (worktreeInfo) {
+      scannedRepos.update((repos) =>
+        repos.map((r) => (r.repoPath === repoPath ? { ...r, worktrees: [...r.worktrees, worktreeInfo] } : r))
+      );
+    } else {
+      refreshWorktrees();
+    }
+  }
+
   async function refreshInstalledEditors() {
     try {
       const editors = await invokeTauri<EditorInfo[]>('detect_installed_editors');
@@ -526,7 +606,7 @@
     on:openSettings={() => (isSettingsModalOpen = true)}
     on:requestDelete={handleRequestDelete}
     on:cleanAllOrphans={handleCleanAllOrphans}
-    on:worktreeCreated={refreshWorktrees}
+    on:worktreeCreated={handleQuickWorktreeCreated}
   />
 
   <!-- Floating Batch Action Bar -->

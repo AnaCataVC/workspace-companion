@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { WorktreeInfo, SupportedEditor } from '../types';
+  import type { WorktreeInfo, SupportedEditor, SupportedTerminal } from '../types';
   import {
     GitBranch,
     Folder,
@@ -17,6 +17,7 @@
   import { batchSelection, selectedPaths } from '../stores/batchSelection';
   import { appConfig } from '../stores/appConfig';
   import { createEventDispatcher } from 'svelte';
+  import DirtyDiffPopover from './DirtyDiffPopover.svelte';
 
   export let worktree: WorktreeInfo;
   export let repoPath: string = '';
@@ -25,6 +26,7 @@
   const dispatch = createEventDispatcher<{
     openPath: string;
     openEditor: { editor: SupportedEditor; path: string };
+    openTerminal: { terminal: SupportedTerminal; path: string };
     requestSwitchBranch: { worktree: WorktreeInfo; repoPath: string };
     requestDelete: WorktreeInfo;
   }>();
@@ -32,6 +34,8 @@
   let isEditorMenuOpen = false;
 
   $: preferredEditor = ($appConfig.defaultEditor as SupportedEditor) || 'vscode';
+  $: preferredTerminal = ($appConfig.defaultTerminal as SupportedTerminal) || 'wt';
+  $: showTerminalBtn = ($appConfig.showTerminalButton !== false) && preferredTerminal !== 'none';
   $: isSelected = $selectedPaths.has(worktree.path);
 
   function toggleSelection() {
@@ -120,9 +124,13 @@
       {/if}
 
       {#if worktree.isDirty}
-        <span class="px-1.5 py-0.5 rounded bg-rose-950/70 text-rose-300 border border-rose-800/50 text-[10px] font-sans">
-          {worktree.uncommittedFilesCount ? `${worktree.uncommittedFilesCount} uncommitted` : 'Dirty'}
-        </span>
+        <DirtyDiffPopover
+          worktreePath={worktree.path}
+          label={worktree.uncommittedFilesCount ? `${worktree.uncommittedFilesCount} uncommitted` : 'Dirty'}
+          badgeClass="px-1.5 py-0.5 rounded bg-rose-950/70 text-rose-300 border border-rose-800/50 text-[10px] font-sans flex items-center gap-0.5 cursor-pointer"
+          iconSize={10}
+          popoverPositionClass="right-0 top-full mt-1.5"
+        />
       {/if}
 
       {#if worktree.bare}
@@ -228,6 +236,40 @@
         </div>
       {/if}
     </div>
+
+    <!-- 1-Click Launch Terminal / CLI (configurable & toggleable) -->
+    {#if showTerminalBtn}
+      <button
+        type="button"
+        on:click={() => dispatch('openTerminal', { terminal: preferredTerminal, path: worktree.path })}
+        title={preferredTerminal === 'agy'
+          ? 'Open AGY CLI in worktree'
+          : preferredTerminal === 'powershell'
+          ? 'Open PowerShell in worktree'
+          : preferredTerminal === 'cmd'
+          ? 'Open Command Prompt in worktree'
+          : preferredTerminal === 'git-bash'
+          ? 'Open Git Bash in worktree'
+          : 'Open Windows Terminal in worktree'}
+        class="p-1.5 rounded hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 border border-transparent hover:border-neutral-700 transition-colors"
+      >
+        {#if preferredTerminal === 'agy'}
+          <Bot size={12} class="text-indigo-400" />
+        {:else}
+          <Terminal size={12} />
+        {/if}
+      </button>
+    {/if}
+
+    <!-- 1-Click Open File Explorer -->
+    <button
+      type="button"
+      on:click={() => dispatch('openPath', worktree.path)}
+      title="Open in File Explorer"
+      class="p-1.5 rounded hover:bg-neutral-800 text-neutral-400 hover:text-amber-300 border border-transparent hover:border-neutral-700 transition-colors"
+    >
+      <Folder size={12} />
+    </button>
 
     <!-- Delete Worktree button -->
     <button

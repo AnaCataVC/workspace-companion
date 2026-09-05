@@ -20,7 +20,7 @@
     newWorktreeForRepo: string; // repoPath
     switchGhAccount: string; // username
     openSettings: void;
-    worktreeCreated: { worktreePath: string; branchName: string };
+    worktreeCreated: { repoPath: string; worktreeInfo?: import('../types').WorktreeInfo };
   }>();
 
   // High-performance single-pass combined filter
@@ -246,6 +246,7 @@
                 repoName={repo.repoName}
                 on:openPath={(e) => dispatch('openPath', e.detail)}
                 on:openEditor={(e) => dispatch('openEditor', e.detail)}
+                on:openTerminal={(e) => dispatch('openTerminal', e.detail)}
                 on:requestSwitchBranch={(e) => dispatch('requestSwitchBranch', e.detail)}
                 on:requestDelete={(e) => dispatch('requestDelete', { worktree: e.detail, repoPath: repo.repoPath })}
               />
