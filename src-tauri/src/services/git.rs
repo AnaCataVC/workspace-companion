@@ -349,7 +349,7 @@ impl GitService {
 
         // Check if upstream branch is gone (git branch -vv)
         for line in context.branch_vv_output.lines() {
-            let trimmed = line.trim().trim_start_matches('*').trim();
+            let trimmed = line.trim().trim_start_matches(['*', '+']).trim();
             let branch_token = trimmed.split_whitespace().next().unwrap_or("");
             if branch_token == short_branch && line.contains(": gone]") {
                 return (true, Some("Upstream remote branch was deleted".to_string()));
@@ -359,7 +359,7 @@ impl GitService {
         // Check if merged into the default branch
         if short_branch != context.default_branch && short_branch != "master" {
             for line in context.merged_branches_output.lines() {
-                let cleaned = line.trim().trim_start_matches('*').trim();
+                let cleaned = line.trim().trim_start_matches(['*', '+']).trim();
                 if cleaned == short_branch {
                     return (true, Some(format!("Merged into {}", context.default_branch)));
                 }
