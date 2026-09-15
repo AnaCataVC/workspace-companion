@@ -86,14 +86,35 @@ When cleaning up multiple feature worktrees or stale AI agent worktrees:
 
 ---
 
-## 5. Multi-Account GitHub CLI Management
+## 5. Branch Cleaner Workflow
+
+Toggle to the **Branch Cleaner** with the view switch in the top toolbar (next to `[▦/▤ View]`). Unlike
+the worktree list, this view lists **every local branch** across your managed repos — including
+branches that never had a worktree of their own, which is most of what piles up after a PR merges.
+
+1. **Filter**: Use the status chips (`All` / `Merged` / `Remote gone` / `Protected`) to narrow the
+   list. `Protected` branches (the default branch, or any branch checked out in a worktree) show a
+   lock icon instead of a checkbox — they can never be selected for deletion.
+2. **Select**: Click a branch's checkbox, or **`Select All`** on a repository's header to select every
+   deletable branch in that repo at once.
+3. **Review & Confirm**: The floating bar shows the selected count. Clicking **`Delete Selected`**
+   opens a review dialog listing each branch as `merged` or `unmerged`.
+4. **Force unmerged branches (optional)**: Unmerged branches are skipped by default — Git itself
+   refuses to delete a branch that isn't merged. Check **"Force delete unmerged branches
+   permanently"** to delete them anyway (`git branch -D`).
+5. **Safety guarantee**: The default branch and any branch checked out in a worktree are never
+   deletable, even with force enabled — this is enforced on the backend, not just hidden in the UI.
+
+---
+
+## 6. Multi-Account GitHub CLI Management
 
 - **Global CLI Identity**: Click the **`@username`** badge in the top toolbar to switch your active global GitHub CLI account (`gh auth switch`).
 - **Repository Context**: If a repository belongs to a specific organization or work account (e.g. `@CataVillalobosC`), Workspace Companion highlights the active profile and ensures commit authorship and PR commands target the correct account.
 
 ---
 
-## 6. Fast Worktree Creation
+## 7. Fast Worktree Creation
 
 At the bottom of each repository section:
 1. Type a new branch name into the **`+ Fast Worktree: branch-name`** field.
@@ -102,14 +123,14 @@ At the bottom of each repository section:
 
 ---
 
-## 7. Keyboard Shortcuts
+## 8. Keyboard Shortcuts
 
 Workspace Companion is designed to be operated without leaving the keyboard:
 
 | Shortcut | Context | Action |
 | :--- | :--- | :--- |
 | `Ctrl+Shift+W` | Global | Toggle the floating window |
-| `Escape` | Any open modal | Close it (Branch Switcher, New Worktree, Watched Folders, Orphan Cleaner, Batch Delete, GitHub Account) |
+| `Escape` | Any open modal | Close it (Branch Switcher, New Worktree, Watched Folders, Orphan Cleaner, Batch Delete, Branch Batch Delete, GitHub Account) |
 | `↑` / `↓` | Branch Switcher Modal | Move the highlighted branch |
 | `Enter` | Branch Switcher Modal | Checkout the highlighted branch |
 | `Enter` / `Escape` | Fast Worktree Creator & New Worktree Modal branch field | Create now / clear and collapse |

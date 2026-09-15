@@ -10,11 +10,17 @@
   import WatchFoldersModal from './lib/components/WatchFoldersModal.svelte';
   import BatchActionBar from './lib/components/BatchActionBar.svelte';
   import BatchDeleteModal from './lib/components/BatchDeleteModal.svelte';
+  import BranchFilterBar from './lib/components/BranchFilterBar.svelte';
+  import BranchList from './lib/components/BranchList.svelte';
+  import BranchActionBar from './lib/components/BranchActionBar.svelte';
+  import BranchBatchDeleteModal from './lib/components/BranchBatchDeleteModal.svelte';
   import ToastContainer from './lib/components/ToastContainer.svelte';
   import { scannedRepos, isScanning, isPinned, scanError } from './lib/stores/worktrees';
+  import { scannedBranches, isScanningBranches, branchScanError } from './lib/stores/branchCleaner';
   import { ghAccounts, activeGhAccount, isGhLoading } from './lib/stores/ghAuth';
   import { appConfig, selectedAccountFilter } from './lib/stores/appConfig';
   import { batchSelection, selectedWorktreeList } from './lib/stores/batchSelection';
+  import { branchSelection, selectedBranchList } from './lib/stores/branchSelection';
   import { installedEditors } from './lib/stores/editors';
   import { notifications } from './lib/stores/notifications';
   import type {
@@ -31,8 +37,20 @@
     CheckoutBranchResult,
     AppConfig,
     BatchDeleteTarget,
-    BatchDeleteSummary
+    BatchDeleteSummary,
+    BranchStatusEntry,
+    BranchDeleteTarget,
+    BranchBatchDeleteSummary
   } from './lib/types';
+
+  // Top-level view toggle: worktrees vs. the Branch Cleaner
+  let activeView: 'worktrees' | 'branches' = 'worktrees';
+
+  // Branch cleaner batch deletion state
+  let isBranchBatchDeleteModalOpen: boolean = false;
+  let isBranchBatchDeleting: boolean = false;
+  let branchBatchDeleteSummary: BranchBatchDeleteSummary | null = null;
+  let branchBatchDeleteError: string | null = null;
 
   // Deletion state
   let selectedWorktreeForDelete: WorktreeInfo | null = null;
@@ -159,6 +177,36 @@
       }
       if (cmd === 'open_in_editor' || cmd === 'open_in_terminal' || cmd === 'switch_gh_account' || cmd === 'remove_worktree') {
         return { success: true } as unknown as T;
+      }
+      if (cmd === 'scan_branches_for_cleanup') {
+        const repoPaths: string[] = args.repoPaths || [];
+        return repoPaths.flatMap((repoPath) => [
+          {
+            repoPath, name: 'main', isCurrent: true, isDefault: true, isMerged: false,
+            isRemoteGone: false, isCheckedOut: true, checkedOutWorktreePath: repoPath,
+            lastCommitSha: 'a1b2c3d', lastCommitMessage: 'feat: add UI'
+          },
+          {
+            repoPath, name: 'feat/old-merged', isCurrent: false, isDefault: false, isMerged: true,
+            isRemoteGone: false, isCheckedOut: false, checkedOutWorktreePath: null,
+            lastCommitSha: 'b2c3d4e', lastCommitMessage: 'Merged feature'
+          },
+          {
+            repoPath, name: 'feat/stale-remote', isCurrent: false, isDefault: false, isMerged: false,
+            isRemoteGone: true, isCheckedOut: false, checkedOutWorktreePath: null,
+            lastCommitSha: 'c3d4e5f', lastCommitMessage: 'Upstream deleted'
+          }
+        ]) as unknown as T;
+      }
+      if (cmd === 'remove_branches_batch') {
+        const targets = (args.targets || []) as BranchDeleteTarget[];
+        return {
+          totalRequested: targets.length,
+          deletedCount: targets.length,
+          skippedCount: 0,
+          deletedBranches: targets.map((t) => ({ repoPath: t.repoPath, branchName: t.branchName })),
+          errors: []
+        } as unknown as T;
       }
       return null as unknown as T;
     }
@@ -519,6 +567,74 @@
     }
   }
 
+  // Branch Cleaner: scan / toggle view / batch delete
+  async function refreshBranches() {
+    const paths = $scannedRepos.map((r) => r.repoPath);
+    if (paths.length === 0) {
+      scannedBranches.set([]);
+      return;
+    }
+
+    isScanningBranches.set(true);
+    branchScanError.set(null);
+
+    try {
+      const entries = await invokeTauri<BranchStatusEntry[]>('scan_branches_for_cleanup', { repoPaths: paths });
+      scannedBranches.set(entries || []);
+    } catch (err: any) {
+      branchScanError.set(err?.message || err?.toString() || 'Failed to scan branches');
+    } finally {
+      isScanningBranches.set(false);
+    }
+  }
+
+  function handleToggleView() {
+    activeView = activeView === 'worktrees' ? 'branches' : 'worktrees';
+    if (activeView === 'branches') {
+      refreshBranches();
+    }
+  }
+
+  function handleOpenBranchBatchDeleteModal() {
+    branchBatchDeleteSummary = null;
+    branchBatchDeleteError = null;
+    isBranchBatchDeleteModalOpen = true;
+  }
+
+  async function handleConfirmBranchBatchDelete(event: CustomEvent<{ targets: BranchDeleteTarget[]; force: boolean }>) {
+    const { targets } = event.detail;
+    isBranchBatchDeleting = true;
+    branchBatchDeleteError = null;
+
+    try {
+      const summary = await invokeTauri<BranchBatchDeleteSummary>('remove_branches_batch', { targets });
+      branchBatchDeleteSummary = summary;
+
+      // `deletedBranches` is repo-qualified (see `DeletedBranchRef`), so it can be matched
+      // directly against `scannedBranches` without ambiguity even if the same branch name was
+      // targeted in more than one repo in this batch.
+      const deletedKeys = new Set(summary.deletedBranches.map((d) => `${d.repoPath}::${d.branchName}`));
+      if (deletedKeys.size > 0) {
+        scannedBranches.update((existing) =>
+          existing.filter((b) => !deletedKeys.has(`${b.repoPath}::${b.name}`))
+        );
+      }
+
+      const remainingKeys = new Set($scannedBranches.map((b) => `${b.repoPath}::${b.name}`));
+      branchSelection.prune(remainingKeys);
+
+      if (summary && summary.errors.length === 0 && summary.skippedCount === 0) {
+        branchSelection.clear();
+        isBranchBatchDeleteModalOpen = false;
+        notifications.success('Branches deleted', `Successfully deleted ${summary.deletedCount} branch(es).`);
+      }
+    } catch (err: any) {
+      branchBatchDeleteError = err?.message || err?.toString() || 'Failed to delete branches';
+    } finally {
+      isBranchBatchDeleting = false;
+    }
+  }
+
   async function refreshInstalledEditors() {
     try {
       const editors = await invokeTauri<EditorInfo[]>('detect_installed_editors');
@@ -582,46 +698,69 @@
 
 <main class="w-full h-screen flex flex-col bg-neutral-900 text-neutral-100 overflow-hidden select-none relative">
   <Header
-    onRefresh={refreshWorktrees}
+    {activeView}
+    isRefreshing={activeView === 'worktrees' ? $isScanning : $isScanningBranches}
+    onRefresh={activeView === 'worktrees' ? refreshWorktrees : () => refreshBranches()}
+    onToggleView={handleToggleView}
     onOpenGhModal={() => (isGhModalOpen = true)}
     onOpenNewWorktreeModal={() => handleOpenNewWorktree()}
     onOpenSettingsModal={() => (isSettingsModalOpen = true)}
   />
 
-  {#if $scanError}
-    <div class="p-2 mx-3 mt-2 rounded bg-rose-950/60 border border-rose-800/50 text-rose-300 text-xs">
-      {$scanError}
-    </div>
+  {#if activeView === 'worktrees'}
+    {#if $scanError}
+      <div class="p-2 mx-3 mt-2 rounded bg-rose-950/60 border border-rose-800/50 text-rose-300 text-xs">
+        {$scanError}
+      </div>
+    {/if}
+
+    <AccountFilterBar />
+
+    <WorktreeList
+      on:openPath={handleOpenPath}
+      on:openEditor={handleOpenEditor}
+      on:openTerminal={handleOpenTerminal}
+      on:requestSwitchBranch={handleRequestSwitchBranch}
+      on:newWorktreeForRepo={(e) => handleOpenNewWorktree(e.detail)}
+      on:switchGhAccount={(e) => handleSwitchGhAccount(e.detail)}
+      on:openSettings={() => (isSettingsModalOpen = true)}
+      on:requestDelete={handleRequestDelete}
+      on:cleanAllOrphans={handleCleanAllOrphans}
+      on:worktreeCreated={handleQuickWorktreeCreated}
+    />
+
+    <!-- Floating Batch Action Bar -->
+    <BatchActionBar on:openBatchDeleteModal={handleOpenBatchDeleteModal} />
+
+    <!-- Batch Delete Modal -->
+    <BatchDeleteModal
+      isOpen={isBatchDeleteModalOpen}
+      targets={$selectedWorktreeList}
+      isDeleting={isBatchDeleting}
+      summary={batchDeleteSummary}
+      errorMessage={batchDeleteError}
+      on:close={() => (isBatchDeleteModalOpen = false)}
+      on:confirmDelete={handleConfirmBatchDelete}
+    />
+  {:else}
+    <BranchFilterBar />
+
+    <BranchList />
+
+    <!-- Floating Branch Batch Action Bar -->
+    <BranchActionBar on:openBatchDeleteModal={handleOpenBranchBatchDeleteModal} />
+
+    <!-- Branch Batch Delete Modal -->
+    <BranchBatchDeleteModal
+      isOpen={isBranchBatchDeleteModalOpen}
+      targets={$selectedBranchList}
+      isDeleting={isBranchBatchDeleting}
+      summary={branchBatchDeleteSummary}
+      errorMessage={branchBatchDeleteError}
+      on:close={() => (isBranchBatchDeleteModalOpen = false)}
+      on:confirmDelete={handleConfirmBranchBatchDelete}
+    />
   {/if}
-
-  <AccountFilterBar />
-
-  <WorktreeList
-    on:openPath={handleOpenPath}
-    on:openEditor={handleOpenEditor}
-    on:openTerminal={handleOpenTerminal}
-    on:requestSwitchBranch={handleRequestSwitchBranch}
-    on:newWorktreeForRepo={(e) => handleOpenNewWorktree(e.detail)}
-    on:switchGhAccount={(e) => handleSwitchGhAccount(e.detail)}
-    on:openSettings={() => (isSettingsModalOpen = true)}
-    on:requestDelete={handleRequestDelete}
-    on:cleanAllOrphans={handleCleanAllOrphans}
-    on:worktreeCreated={handleQuickWorktreeCreated}
-  />
-
-  <!-- Floating Batch Action Bar -->
-  <BatchActionBar on:openBatchDeleteModal={handleOpenBatchDeleteModal} />
-
-  <!-- Batch Delete Modal -->
-  <BatchDeleteModal
-    isOpen={isBatchDeleteModalOpen}
-    targets={$selectedWorktreeList}
-    isDeleting={isBatchDeleting}
-    summary={batchDeleteSummary}
-    errorMessage={batchDeleteError}
-    on:close={() => (isBatchDeleteModalOpen = false)}
-    on:confirmDelete={handleConfirmBatchDelete}
-  />
 
   <WatchFoldersModal
     isOpen={isSettingsModalOpen}

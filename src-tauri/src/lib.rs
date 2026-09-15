@@ -2,6 +2,7 @@ pub mod commands;
 pub mod services;
 pub mod tray;
 
+use commands::branches::{remove_branches_batch, scan_branches_for_cleanup};
 use commands::gh_auth::{get_gh_accounts, switch_gh_account};
 use commands::worktrees::{
     checkout_worktree_branch, create_worktree, detect_installed_editors, get_app_config,
@@ -35,6 +36,8 @@ pub fn run() {
             checkout_worktree_branch,
             suggest_worktree_path,
             create_worktree,
+            scan_branches_for_cleanup,
+            remove_branches_batch,
             get_gh_accounts,
             switch_gh_account
         ])

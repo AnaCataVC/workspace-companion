@@ -1,3 +1,4 @@
+pub mod branch_cleaner;
 pub mod config;
 pub mod gh;
 pub mod git;

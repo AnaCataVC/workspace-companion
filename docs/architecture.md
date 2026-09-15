@@ -55,7 +55,21 @@ The Rust backend handles low-level OS interactions, system tray lifecycle, and s
    - Per-worktree enrichment (`enrich_worktree_info`: dirty check, last-commit info, orphan check) runs in parallel across a repository's worktrees via `rayon::par_iter_mut`, and is also reachable standalone through `build_single_worktree_info` for a single worktree path.
    - Leverages `rayon` for parallel repository discovery across configured watch folders and parallel per-repo scanning.
 
-5. **Configuration Service (`services/config.rs`)**:
+5. **Branch Cleaner (`services/branch_cleaner.rs`)**:
+   - Lists every local branch in a repository — not only ones with a worktree — via
+     `GitService::list_local_branches_with_status`, flagging each as current, default, merged,
+     remote-gone, and/or checked out (in the main worktree or a linked one).
+   - `remove_branches_batch` re-derives that status per repository immediately before deleting,
+     rather than trusting the caller's targets, so the default branch and any checked-out branch are
+     never deletable — not even with `force` — regardless of what the frontend last scanned. See
+     ADR 0006.
+   - Deletion itself uses `git branch -d` (git's own refusal for unmerged branches) unless `force`
+     requests `-D`; the merged/remote-gone flags are informational for the UI, not a second gate.
+   - Shares `RepoOrphanContext` and the merged/gone classification logic with the orphaned worktree
+     cleaner via `GitService::branch_status_flags`, so the two features can't disagree about what
+     counts as merged or gone.
+
+6. **Configuration Service (`services/config.rs`)**:
    - Manages user preferences, watched root folders, default editor, default terminal, and terminal button visibility.
    - Employs atomic write commits (`.tmp` swap) and `#[serde(default)]` annotations for backward compatibility.
 
@@ -76,6 +90,9 @@ The frontend is built with **Svelte 5** leveraging modern reactive stores and cl
   - `OrphanCleanerModal.svelte`: Guided cleanup dialog with pre-flight safety summaries.
   - `WatchFoldersModal.svelte`: Configuration dialog for repository root scan paths, default IDE, and default terminal.
   - `GhAccountModal.svelte`: Account switcher modal.
+  - `BranchList.svelte` & `BranchItemRow.svelte`: Branch Cleaner list, grouped by repository, showing merged/remote-gone/protected status badges and per-branch selection.
+  - `BranchFilterBar.svelte`: Status filter chips (All/Merged/Remote gone/Protected) for the Branch Cleaner, same single-pass tally pattern as `AccountFilterBar.svelte`.
+  - `BranchBatchDeleteModal.svelte` & `BranchActionBar.svelte`: Branch Cleaner's review/confirm modal and floating selection dock, mirroring `BatchDeleteModal.svelte`/`BatchActionBar.svelte` with "unmerged" in place of "dirty".
 - `src/lib/actions/`:
   - `closeOnEscape.ts`: Shared Svelte action wiring `Escape` to a modal's close handler (`{ enabled, onClose }`), used by every modal so Escape-to-close can't silently go missing from a new one.
 - `src/lib/stores/`:
@@ -83,6 +100,8 @@ The frontend is built with **Svelte 5** leveraging modern reactive stores and cl
   - `ghAuth.ts`: Active GitHub account and switcher logic.
   - `appConfig.ts`: Application preferences, default editor, default terminal, and watch paths.
   - `editors.ts`: Installed editor (`installedEditors`) and terminal (`installedTerminals`) detection.
+  - `branchCleaner.ts`: Scanned branch list, scan state, and the selected branch status filter.
+  - `branchSelection.ts`: Batch-selection map for the Branch Cleaner, keyed by `repoPath::branchName` since branch names — unlike worktree paths — aren't globally unique across repos.
 
 ### State Update Strategy
 `App.svelte` patches the `scannedRepos` store in place for single-worktree mutations (create, delete, branch switch) using the fresh `worktreeInfo` the backend returns for create/checkout, or the known path for delete — mirroring the pattern the batch-delete flow already used. A full rescan (`scan_worktrees`) is reserved for the manual Refresh action and as a defensive fallback if a mutation response doesn't carry `worktreeInfo`. See ADR 0005 for the reasoning.

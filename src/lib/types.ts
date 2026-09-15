@@ -146,3 +146,46 @@ export interface CreateWorktreeResult {
   message: string;
   worktreeInfo: WorktreeInfo;
 }
+
+export type BranchStatusFilterType = 'ALL' | 'MERGED' | 'REMOTE_GONE' | 'PROTECTED';
+
+export interface BranchStatusEntry {
+  repoPath: string;
+  name: string;
+  isCurrent: boolean;
+  isDefault: boolean;
+  isMerged: boolean;
+  isRemoteGone: boolean;
+  isCheckedOut: boolean;
+  checkedOutWorktreePath?: string | null;
+  lastCommitSha?: string | null;
+  lastCommitMessage?: string | null;
+}
+
+export interface BranchDeleteTarget {
+  repoPath: string;
+  branchName: string;
+  force: boolean;
+  repoName?: string;
+  isMerged?: boolean;
+  isRemoteGone?: boolean;
+}
+
+export interface BranchBatchItemError {
+  branchName: string;
+  error: string;
+}
+
+/** Identifies a deleted branch by repo + name — a bare name is ambiguous when a batch spans repos. */
+export interface DeletedBranchRef {
+  repoPath: string;
+  branchName: string;
+}
+
+export interface BranchBatchDeleteSummary {
+  totalRequested: number;
+  deletedCount: number;
+  skippedCount: number;
+  deletedBranches: DeletedBranchRef[];
+  errors: BranchBatchItemError[];
+}

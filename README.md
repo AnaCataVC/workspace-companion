@@ -21,6 +21,7 @@
 - 📊 **Active Worktrees Dashboard**: Discovers local repositories, parses active worktrees, detached heads, locked states, and dirty working trees with zero console flickering.
 - 💻 **Independent IDE & Terminal Launchers**: Configurable 1-click launching for preferred code editors (VS Code, Antigravity IDE, Cursor, Windsurf) and consoles (Windows Terminal, PowerShell, CMD, Git Bash, AGY CLI) with optional terminal quick-button toggle.
 - 🧹 **Orphaned Worktree Cleaner**: Safely identifies worktrees whose remote upstream branch has been deleted or merged, equipped with pre-flight dirty checks to prevent accidental loss of uncommitted work.
+- 🌿 **Branch Cleaner**: Lists every local branch across managed repos — including ones with no worktree of their own — flagged as merged, remote-gone, or protected, for safe bulk deletion. The default branch and any checked-out branch are never deletable, even when forcing an unmerged one.
 - 🔄 **1-Click GitHub CLI Profile Switcher**: Instantly toggle between personal and corporate GitHub CLI identities (e.g. `gh auth switch`) and prevent author mismatch.
 - 🪟 **Spotlight-style Floating Window**: Resides silently in the Windows system tray (<40 MB RAM in background), displays adjacent to the taskbar upon click, and auto-hides when losing focus.
 
@@ -95,6 +96,7 @@ npm run build
   - [ADR 0003: Git Porcelain Protocol & Pre-flight Safety](docs/adr/0003-git-porcelain-preflight-safety.md)
   - [ADR 0004: Dual IDE & Terminal Separation and Subprocess Launcher Hardening](docs/adr/0004-ide-terminal-separation-and-subprocess-hardening.md)
   - [ADR 0005: Delta-Patch State Updates and Repo-Wide Context Caching Over Full Rescans](docs/adr/0005-delta-patch-state-and-repo-context-caching.md)
+  - [ADR 0006: Branch Cleaner Safety Guards](docs/adr/0006-branch-cleaner-safety-guards.md)
 - 🤝 [Contributing Guidelines](CONTRIBUTING.md)
 
 ---
@@ -109,6 +111,7 @@ npm run build
 - 📊 **Dashboard de Worktrees Activos**: Escanea repositorios locales y muestra worktrees, ramas, hashes de commit y estados sin parpadeos de consola.
 - 💻 **Lanzadores Independientes de IDE y Terminal**: Lanzamiento configurable en 1 clic para editores de código (VS Code, Antigravity IDE, Cursor, Windsurf) y consolas (Windows Terminal, PowerShell, CMD, Git Bash, AGY CLI) con toggle opcional para mostrar u ocultar el botón de terminal.
 - 🧹 **Limpiador Seguro de Worktrees Huérfanos**: Detecta ramas mergeadas o eliminadas remotamente con validación previa de cambios sin commitear para evitar pérdida accidental de código.
+- 🌿 **Limpiador de Ramas**: Lista todas las ramas locales de los repos gestionados —incluidas las que no tienen worktree propio— marcadas como mergeadas, sin remoto o protegidas, para borrado seguro en lote. La rama por defecto y cualquier rama activa en un worktree nunca se pueden borrar, ni forzando una rama sin mergear.
 - 🔄 **Conmutador de Cuentas GitHub CLI en 1 Clic**: Alterna de forma inmediata entre cuentas de trabajo y personales (`gh auth switch`).
 - 🪟 **Ventana Flotante Estilo Spotlight**: Permanece en la bandeja consumiendo menos de 40 MB de RAM, se abre al hacer clic sobre el tray y se auto-oculta al desenfocar (*auto-hide on blur*).
 
@@ -164,4 +167,5 @@ npx tauri dev
   - [ADR 0003: Protocolo Git Porcelain y Guardas de Seguridad](docs/adr/0003-git-porcelain-preflight-safety.md)
   - [ADR 0004: Separación Dual de IDE y Terminal y Endurecimiento de Subprocesos](docs/adr/0004-ide-terminal-separation-and-subprocess-hardening.md)
   - [ADR 0005: Actualizaciones Parciales de Estado y Caché de Contexto por Repositorio](docs/adr/0005-delta-patch-state-and-repo-context-caching.md)
+  - [ADR 0006: Guardas de Seguridad del Limpiador de Ramas](docs/adr/0006-branch-cleaner-safety-guards.md)
 - 🤝 [Guía de Contribución](CONTRIBUTING.md)

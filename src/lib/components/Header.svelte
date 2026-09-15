@@ -1,10 +1,13 @@
 <script lang="ts">
-  import { isScanning, isPinned, searchFilter } from '../stores/worktrees';
+  import { isPinned, searchFilter } from '../stores/worktrees';
   import { activeGhAccount } from '../stores/ghAuth';
   import { viewDensity } from '../stores/appConfig';
-  import { RefreshCw, Pin, PinOff, Github, Search, Plus, Settings2, LayoutList, LayoutGrid } from 'lucide-svelte';
+  import { RefreshCw, Pin, PinOff, Github, Search, Plus, Settings2, LayoutList, LayoutGrid, GitBranch } from 'lucide-svelte';
 
+  export let activeView: 'worktrees' | 'branches' = 'worktrees';
+  export let isRefreshing: boolean = false;
   export let onRefresh: () => void;
+  export let onToggleView: () => void;
   export let onOpenGhModal: () => void;
   export let onOpenNewWorktreeModal: () => void;
   export let onOpenSettingsModal: () => void;
@@ -42,14 +45,29 @@
         {/if}
       </button>
 
-      <!-- New Worktree Button -->
+      {#if activeView === 'worktrees'}
+        <!-- New Worktree Button -->
+        <button
+          on:click={onOpenNewWorktreeModal}
+          title="Create new Git worktree"
+          class="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-indigo-600 hover:bg-indigo-500 text-white transition-colors shadow-xs"
+        >
+          <Plus size={13} />
+          <span>New</span>
+        </button>
+      {/if}
+
+      <!-- Branch Cleaner View Toggle -->
       <button
-        on:click={onOpenNewWorktreeModal}
-        title="Create new Git worktree"
-        class="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-indigo-600 hover:bg-indigo-500 text-white transition-colors shadow-xs"
+        on:click={onToggleView}
+        title={activeView === 'worktrees' ? 'Open Branch Cleaner' : 'Back to Worktrees'}
+        class="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition-colors border
+          {activeView === 'branches'
+            ? 'bg-indigo-950/80 border-indigo-700/60 text-indigo-200'
+            : 'bg-neutral-800/80 hover:bg-neutral-700 border-neutral-700/50 text-neutral-300'}"
       >
-        <Plus size={13} />
-        <span>New</span>
+        <GitBranch size={13} />
+        <span>{activeView === 'worktrees' ? 'Branches' : 'Worktrees'}</span>
       </button>
 
       <!-- GitHub Account Badge Button -->
@@ -89,23 +107,25 @@
       <!-- Refresh Scan -->
       <button
         on:click={onRefresh}
-        disabled={$isScanning}
-        title="Refresh Worktrees"
+        disabled={isRefreshing}
+        title={activeView === 'worktrees' ? 'Refresh Worktrees' : 'Refresh Branches'}
         class="p-1.5 rounded-md hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 transition-colors disabled:opacity-50"
       >
-        <RefreshCw size={14} class={$isScanning ? 'animate-spin text-indigo-400' : ''} />
+        <RefreshCw size={14} class={isRefreshing ? 'animate-spin text-indigo-400' : ''} />
       </button>
     </div>
   </div>
 
-  <!-- Search Filter Input -->
-  <div class="relative flex items-center">
-    <Search size={13} class="absolute left-2.5 text-neutral-500 pointer-events-none" />
-    <input
-      type="text"
-      bind:value={$searchFilter}
-      placeholder="Filter worktree, branch or path..."
-      class="w-full bg-neutral-900 border border-neutral-800 rounded-md pl-8 pr-3 py-1 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-indigo-500/70 focus:ring-1 focus:ring-indigo-500/30 transition-all font-sans"
-    />
-  </div>
+  {#if activeView === 'worktrees'}
+    <!-- Search Filter Input -->
+    <div class="relative flex items-center">
+      <Search size={13} class="absolute left-2.5 text-neutral-500 pointer-events-none" />
+      <input
+        type="text"
+        bind:value={$searchFilter}
+        placeholder="Filter worktree, branch or path..."
+        class="w-full bg-neutral-900 border border-neutral-800 rounded-md pl-8 pr-3 py-1 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-indigo-500/70 focus:ring-1 focus:ring-indigo-500/30 transition-all font-sans"
+      />
+    </div>
+  {/if}
 </header>

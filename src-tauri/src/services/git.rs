@@ -76,6 +76,23 @@ pub struct WorktreeBranchesResponse {
     pub branches: Vec<BranchEntry>,
 }
 
+/// A local branch with the status the branch cleaner needs, independent of whether it has a
+/// worktree at all — unlike `BranchEntry`, which is scoped to one worktree's checkout context.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchStatusEntry {
+    pub repo_path: String,
+    pub name: String,
+    pub is_current: bool,
+    pub is_default: bool,
+    pub is_merged: bool,
+    pub is_remote_gone: bool,
+    pub is_checked_out: bool,
+    pub checked_out_worktree_path: Option<String>,
+    pub last_commit_sha: Option<String>,
+    pub last_commit_message: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckoutBranchResult {
@@ -338,6 +355,35 @@ impl GitService {
         }
     }
 
+    /// Splits the orphan check into its two independent components (merged into the default
+    /// branch vs. upstream deleted). `check_orphan_status` collapses both into one "orphaned"
+    /// bucket for the worktree cleaner; the branch cleaner needs them separately so it can offer
+    /// "Merged" and "Remote gone" as distinct filters.
+    fn branch_status_flags(short_branch: &str, context: &RepoOrphanContext) -> (bool, bool) {
+        let mut is_remote_gone = false;
+        for line in context.branch_vv_output.lines() {
+            let trimmed = line.trim().trim_start_matches(['*', '+']).trim();
+            let branch_token = trimmed.split_whitespace().next().unwrap_or("");
+            if branch_token == short_branch && line.contains(": gone]") {
+                is_remote_gone = true;
+                break;
+            }
+        }
+
+        let mut is_merged = false;
+        if short_branch != context.default_branch && short_branch != "master" {
+            for line in context.merged_branches_output.lines() {
+                let cleaned = line.trim().trim_start_matches(['*', '+']).trim();
+                if cleaned == short_branch {
+                    is_merged = true;
+                    break;
+                }
+            }
+        }
+
+        (is_merged, is_remote_gone)
+    }
+
     /// Checks if a branch is merged into the default branch or marked as `[gone]` in upstream,
     /// using a `RepoOrphanContext` precomputed once per repository instead of shelling out to
     /// git again for every worktree.
@@ -346,27 +392,87 @@ impl GitService {
         context: &RepoOrphanContext,
     ) -> (bool, Option<String>) {
         let short_branch = branch_ref.replace("refs/heads/", "");
+        let (is_merged, is_remote_gone) = Self::branch_status_flags(&short_branch, context);
 
-        // Check if upstream branch is gone (git branch -vv)
-        for line in context.branch_vv_output.lines() {
-            let trimmed = line.trim().trim_start_matches(['*', '+']).trim();
-            let branch_token = trimmed.split_whitespace().next().unwrap_or("");
-            if branch_token == short_branch && line.contains(": gone]") {
-                return (true, Some("Upstream remote branch was deleted".to_string()));
-            }
+        if is_remote_gone {
+            return (true, Some("Upstream remote branch was deleted".to_string()));
         }
-
-        // Check if merged into the default branch
-        if short_branch != context.default_branch && short_branch != "master" {
-            for line in context.merged_branches_output.lines() {
-                let cleaned = line.trim().trim_start_matches(['*', '+']).trim();
-                if cleaned == short_branch {
-                    return (true, Some(format!("Merged into {}", context.default_branch)));
-                }
-            }
+        if is_merged {
+            return (true, Some(format!("Merged into {}", context.default_branch)));
         }
 
         (false, None)
+    }
+
+    /// Lists every local branch in a repository — regardless of whether it has a worktree — with
+    /// merged/gone/current/default/checked-out status, for the branch cleaner. Reuses the same
+    /// `RepoOrphanContext` and status-classification logic as `check_orphan_status` instead of
+    /// recomputing it, and cross-references `worktree list --porcelain` (same as
+    /// `list_branches_for_worktree`) so a branch checked out anywhere — including the main
+    /// worktree — is flagged rather than left deletable.
+    pub fn list_local_branches_with_status<P: AsRef<Path>>(
+        repo_path: P,
+    ) -> Result<Vec<BranchStatusEntry>, String> {
+        let repo_root = repo_path.as_ref();
+        let repo_path_str = repo_root.to_string_lossy().to_string();
+
+        let context = Self::build_repo_orphan_context(repo_root);
+
+        let raw_wt = Self::run_git(repo_root, &["worktree", "list", "--porcelain"])?;
+        let worktrees = Self::parse_worktree_porcelain(&raw_wt);
+        let mut branch_to_worktree: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        for wt in &worktrees {
+            if let Some(b) = &wt.branch {
+                branch_to_worktree.insert(b.replace("refs/heads/", ""), wt.path.clone());
+            }
+        }
+
+        let current_branch =
+            Self::run_git(repo_root, &["rev-parse", "--abbrev-ref", "HEAD"]).ok();
+
+        let local_raw = Self::run_git(
+            repo_root,
+            &["branch", "--list", "--format=%(refname:short)|||%(objectname:short)|||%(subject)"],
+        )?;
+
+        let mut entries = Vec::new();
+        for line in local_raw.lines().filter(|l| !l.trim().is_empty()) {
+            let parts: Vec<&str> = line.split("|||").collect();
+            let name = parts.first().unwrap_or(&"").to_string();
+            let sha = parts.get(1).map(|s| s.to_string());
+            let msg = parts.get(2).map(|s| s.to_string());
+
+            let (is_merged, is_remote_gone) = Self::branch_status_flags(&name, &context);
+            let checked_out_worktree_path = branch_to_worktree.get(&name).cloned();
+
+            entries.push(BranchStatusEntry {
+                repo_path: repo_path_str.clone(),
+                is_current: current_branch.as_deref() == Some(name.as_str()),
+                is_default: name == context.default_branch || name == "master",
+                is_merged,
+                is_remote_gone,
+                is_checked_out: checked_out_worktree_path.is_some(),
+                checked_out_worktree_path,
+                last_commit_sha: sha,
+                last_commit_message: msg,
+                name,
+            });
+        }
+
+        Ok(entries)
+    }
+
+    /// Deletes a local branch. Uses `-d` (git's own safety net: refuses if the branch is not
+    /// merged into the current branch) unless `force` is set, which uses `-D`.
+    pub fn delete_branch<P: AsRef<Path>>(
+        repo_path: P,
+        branch_name: &str,
+        force: bool,
+    ) -> Result<(), String> {
+        let flag = if force { "-D" } else { "-d" };
+        Self::run_git(repo_path, &["branch", flag, branch_name])?;
+        Ok(())
     }
 
     /// Identifies the default branch (main/master).
