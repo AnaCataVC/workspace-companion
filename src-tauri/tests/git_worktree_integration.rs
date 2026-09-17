@@ -3,6 +3,7 @@ use workspace_companion::services::git::GitService;
 use workspace_companion::services::worktree_cleaner::{
     BatchDeleteTarget, WorktreeCleanerService,
 };
+use workspace_companion::services::BatchItemErrorKind;
 
 mod common;
 use common::{create_test_repo, run_git};
@@ -169,6 +170,20 @@ fn test_orphan_detection_lifecycle() {
         "Orphan reason should cite merged into main: {:?}",
         orphan_wt.orphan_reason
     );
+
+    // The branch-level cross-link the worktree view renders as a "Merged" badge.
+    assert!(
+        orphan_wt.is_branch_merged,
+        "a worktree sitting on a merged branch must report is_branch_merged"
+    );
+    assert!(
+        !orphan_wt.is_branch_remote_gone,
+        "no upstream was ever configured, so the branch is not remote-gone"
+    );
+    assert!(
+        !main_wt.is_branch_merged,
+        "the default branch is never reported as merged into itself"
+    );
 }
 
 #[test]
@@ -190,6 +205,13 @@ fn test_batch_delete_skips_dirty_and_protects_main() {
 
     fs::write(wt_dirty.join("unsaved.txt"), "precious changes").unwrap();
 
+    let bogus_str = wt_temp1
+        .path()
+        .join("wt-never-registered")
+        .to_str()
+        .unwrap()
+        .to_string();
+
     let targets = vec![
         // Target 1: Root repo (MUST be skipped)
         BatchDeleteTarget {
@@ -209,13 +231,53 @@ fn test_batch_delete_skips_dirty_and_protects_main() {
             worktree_path: wt_dirty_str.clone(),
             force: false,
         },
+        // Target 4: a path git knows nothing about — no guard rejects it, `git worktree remove`
+        // simply fails, which is what `Failed` has to be reserved for.
+        BatchDeleteTarget {
+            repo_path: repo_path_str.clone(),
+            worktree_path: bogus_str.clone(),
+            force: false,
+        },
     ];
 
     let summary = WorktreeCleanerService::remove_worktrees_batch(targets);
-    assert_eq!(summary.total_requested, 3);
+    assert_eq!(summary.total_requested, 4);
     assert_eq!(summary.deleted_count, 1, "Only the clean worktree should be deleted");
     assert_eq!(summary.skipped_count, 2, "Main repo and dirty worktree must be skipped");
     assert!(!wt_clean.exists(), "Clean worktree must be deleted");
     assert!(wt_dirty.exists(), "Dirty worktree must remain on disk");
     assert!(repo_path.exists(), "Root repo must remain on disk");
+
+    let main_err = summary
+        .errors
+        .iter()
+        .find(|e| e.worktree_path == repo_path_str)
+        .expect("main worktree must be reported");
+    assert_eq!(
+        main_err.kind,
+        BatchItemErrorKind::Skipped,
+        "refusing the main worktree is a guard firing, not a failure"
+    );
+
+    let dirty_err = summary
+        .errors
+        .iter()
+        .find(|e| e.worktree_path == wt_dirty_str)
+        .expect("dirty worktree must be reported");
+    assert_eq!(
+        dirty_err.kind,
+        BatchItemErrorKind::Skipped,
+        "refusing a dirty worktree without force is a guard firing, not a failure"
+    );
+
+    let bogus_err = summary
+        .errors
+        .iter()
+        .find(|e| e.worktree_path == bogus_str)
+        .expect("unknown worktree path must be reported");
+    assert_eq!(
+        bogus_err.kind,
+        BatchItemErrorKind::Failed,
+        "a git call that genuinely failed must not be reported as a skip"
+    );
 }

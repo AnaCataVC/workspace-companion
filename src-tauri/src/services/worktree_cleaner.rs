@@ -1,5 +1,6 @@
 use crate::services::config::{AppConfig, ConfigService, WatchFolder};
 use crate::services::git::{GitService, RepoOrphanContext, WorktreeEntry};
+use crate::services::BatchItemErrorKind;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -57,6 +58,7 @@ pub struct BatchDeleteTarget {
 pub struct BatchItemError {
     pub worktree_path: String,
     pub error: String,
+    pub kind: BatchItemErrorKind,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -260,6 +262,16 @@ impl WorktreeCleanerService {
             None
         };
 
+        // Branch-level status, reported for every worktree including the main one — it describes
+        // the branch, not the worktree, so the "never orphaned" rule below does not apply to it.
+        if let Some(branch_ref) = &worktree.branch {
+            let short_branch = branch_ref.replace("refs/heads/", "");
+            let (is_merged, is_remote_gone) =
+                GitService::branch_status_flags(&short_branch, orphan_context);
+            worktree.is_branch_merged = is_merged;
+            worktree.is_branch_remote_gone = is_remote_gone;
+        }
+
         // Orphan status (Root/main worktrees are never orphaned worktrees)
         if !worktree.is_main {
             if let Some(branch_ref) = &worktree.branch {
@@ -386,6 +398,7 @@ impl WorktreeCleanerService {
                         local_errors.push(BatchItemError {
                             worktree_path: item.worktree_path.clone(),
                             error: "Cannot remove the main working tree of a repository.".to_string(),
+                            kind: BatchItemErrorKind::Skipped,
                         });
                         continue;
                     }
@@ -401,6 +414,7 @@ impl WorktreeCleanerService {
                                     "Cannot remove dirty worktree: {} uncommitted files detected. Enable force delete to proceed.",
                                     count
                                 ),
+                                kind: BatchItemErrorKind::Skipped,
                             });
                             continue;
                         }
@@ -421,6 +435,7 @@ impl WorktreeCleanerService {
                             local_errors.push(BatchItemError {
                                 worktree_path: item.worktree_path,
                                 error: err,
+                                kind: BatchItemErrorKind::Failed,
                             });
                         }
                     }

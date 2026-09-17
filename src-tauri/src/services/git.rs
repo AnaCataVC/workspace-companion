@@ -23,6 +23,13 @@ pub struct WorktreeEntry {
     pub is_orphaned: bool,
     #[serde(rename = "orphanReason")]
     pub orphan_reason: Option<String>,
+    /// Status of the branch this worktree has checked out, so the worktree view can say *why* a
+    /// worktree is disposable instead of only that it is. Same source as the branch cleaner's own
+    /// flags (`branch_status_flags`), so the two views can never disagree.
+    #[serde(rename = "isBranchMerged")]
+    pub is_branch_merged: bool,
+    #[serde(rename = "isBranchRemoteGone")]
+    pub is_branch_remote_gone: bool,
     #[serde(rename = "isDirty")]
     pub is_dirty: bool,
     #[serde(rename = "uncommittedFilesCount")]
@@ -190,6 +197,8 @@ impl GitService {
                         is_main: false,
                         is_orphaned: false,
                         orphan_reason: None,
+                        is_branch_merged: false,
+                        is_branch_remote_gone: false,
                         is_dirty: false,
                         uncommitted_files_count: None,
                         last_commit_message: None,
@@ -230,6 +239,8 @@ impl GitService {
                 is_main: false,
                 is_orphaned: false,
                 orphan_reason: None,
+                is_branch_merged: false,
+                is_branch_remote_gone: false,
                 is_dirty: false,
                 uncommitted_files_count: None,
                 last_commit_message: None,
@@ -359,7 +370,10 @@ impl GitService {
     /// branch vs. upstream deleted). `check_orphan_status` collapses both into one "orphaned"
     /// bucket for the worktree cleaner; the branch cleaner needs them separately so it can offer
     /// "Merged" and "Remote gone" as distinct filters.
-    fn branch_status_flags(short_branch: &str, context: &RepoOrphanContext) -> (bool, bool) {
+    pub(crate) fn branch_status_flags(
+        short_branch: &str,
+        context: &RepoOrphanContext,
+    ) -> (bool, bool) {
         let mut is_remote_gone = false;
         for line in context.branch_vv_output.lines() {
             let trimmed = line.trim().trim_start_matches(['*', '+']).trim();

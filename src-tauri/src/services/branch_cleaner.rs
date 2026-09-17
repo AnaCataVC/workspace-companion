@@ -1,4 +1,5 @@
 use crate::services::git::{BranchStatusEntry, GitService};
+use crate::services::BatchItemErrorKind;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -17,6 +18,7 @@ pub struct BranchDeleteTarget {
 pub struct BranchBatchItemError {
     pub branch_name: String,
     pub error: String,
+    pub kind: BatchItemErrorKind,
 }
 
 /// Identifies a deleted branch by repo + name, since a bare branch name is ambiguous when a
@@ -102,6 +104,9 @@ impl BranchCleanerService {
                                     "Cannot verify which branches are safe to delete in this repo: {}",
                                     err
                                 ),
+                                // Not a protection firing: the repo's safety status could not be
+                                // established at all, which is a genuine failure to report.
+                                kind: BatchItemErrorKind::Failed,
                             });
                         }
                         return (local_deleted, local_skipped, local_errors);
@@ -120,6 +125,7 @@ impl BranchCleanerService {
                         local_errors.push(BranchBatchItemError {
                             branch_name: item.branch_name.clone(),
                             error: "Cannot delete the default branch or a branch checked out in a worktree.".to_string(),
+                            kind: BatchItemErrorKind::Skipped,
                         });
                         continue;
                     }
@@ -133,10 +139,34 @@ impl BranchCleanerService {
                             repo_path: repo_path.clone(),
                             branch_name: item.branch_name,
                         }),
-                        Err(err) => local_errors.push(BranchBatchItemError {
-                            branch_name: item.branch_name,
-                            error: err,
-                        }),
+                        Err(err) => {
+                            // Unforced, `git branch -d` refused: that is the expected safety net
+                            // for an unmerged branch (ADR 0006 point 3), not a malfunction.
+                            // However, if git failed for reasons other than merge protection
+                            // (e.g. repo lock, invalid ref, disk error), it must be reported
+                            // as a real failure so errors are not silenced.
+                            let err_lower = err.to_lowercase();
+                            let is_unmerged_refusal = !item.force
+                                && (err_lower.contains("not fully merged")
+                                    || err_lower.contains("not merged")
+                                    || statuses
+                                        .iter()
+                                        .find(|s| s.name == item.branch_name)
+                                        .map(|s| !s.is_merged)
+                                        .unwrap_or(false));
+
+                            let kind = if is_unmerged_refusal {
+                                local_skipped += 1;
+                                BatchItemErrorKind::Skipped
+                            } else {
+                                BatchItemErrorKind::Failed
+                            };
+                            local_errors.push(BranchBatchItemError {
+                                branch_name: item.branch_name,
+                                error: err,
+                                kind,
+                            });
+                        }
                     }
                 }
 

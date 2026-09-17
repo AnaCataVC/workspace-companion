@@ -1,6 +1,7 @@
 use std::fs;
 use workspace_companion::services::branch_cleaner::{BranchCleanerService, BranchDeleteTarget};
 use workspace_companion::services::git::GitService;
+use workspace_companion::services::BatchItemErrorKind;
 
 mod common;
 use common::{create_test_repo, run_git};
@@ -123,6 +124,10 @@ fn test_batch_delete_skips_default_and_checked_out_even_with_force() {
     assert_eq!(summary.total_requested, 3);
     assert_eq!(summary.deleted_count, 1, "only the free-standing branch should be deleted");
     assert_eq!(summary.skipped_count, 2, "default branch and checked-out branch must be skipped");
+    assert!(
+        summary.errors.iter().all(|e| e.kind == BatchItemErrorKind::Skipped),
+        "both refusals are protections firing, so neither may be reported as a failure"
+    );
     assert!(summary
         .deleted_branches
         .iter()
@@ -167,6 +172,11 @@ fn test_batch_delete_refuses_repo_when_status_lookup_fails() {
     );
     assert_eq!(summary.skipped_count, 1);
     assert!(!summary.errors.is_empty());
+    assert_eq!(
+        summary.errors[0].kind,
+        BatchItemErrorKind::Failed,
+        "being unable to verify safety is a real failure, not a protection deliberately firing"
+    );
     assert!(
         repo_path.join(".git").join("refs").join("heads").join("main").exists(),
         "main branch ref must survive an unverifiable status lookup"
@@ -203,6 +213,15 @@ fn test_unmerged_branch_requires_force() {
     }]);
     assert_eq!(without_force.deleted_count, 0, "git -d must refuse an unmerged branch");
     assert_eq!(without_force.errors.len(), 1);
+    assert_eq!(
+        without_force.errors[0].kind,
+        BatchItemErrorKind::Skipped,
+        "git's own refusal to delete an unmerged branch is the expected safety net, not a failure"
+    );
+    assert_eq!(
+        without_force.skipped_count, 1,
+        "a target the -d refusal protected must be counted as skipped, not silently dropped"
+    );
 
     let still_there = run_git(repo_path, &["branch", "--list"]).expect("branch --list failed");
     assert!(still_there.contains("feat/unmerged"), "branch must survive the unforced attempt");
