@@ -87,21 +87,25 @@ The frontend is built with **Svelte 5** leveraging modern reactive stores and cl
   - `DirtyDiffPopover.svelte`: Lazy, debounced fetch-and-display of a worktree's uncommitted diff summary, reused by both the Compact and Detailed views.
   - `NewWorktreeModal.svelte`: Modal to create a new worktree from existing or new branches.
   - `BranchSwitcherModal.svelte`: Quick switcher to checkout branches, with arrow-key + Enter keyboard navigation over the filtered branch list.
-  - `OrphanCleanerModal.svelte`: Guided cleanup dialog with pre-flight safety summaries.
+  - `RemoveWorktreeModal.svelte`: Single-worktree removal dialog with pre-flight safety summaries.
   - `WatchFoldersModal.svelte`: Configuration dialog for repository root scan paths, default IDE, and default terminal.
   - `GhAccountModal.svelte`: Account switcher modal.
-  - `BranchList.svelte` & `BranchItemRow.svelte`: Branch Cleaner list, grouped by repository, showing merged/remote-gone/protected status badges and per-branch selection.
-  - `BranchFilterBar.svelte`: Status filter chips (All/Merged/Remote gone/Protected) for the Branch Cleaner, same single-pass tally pattern as `AccountFilterBar.svelte`.
+  - `BranchList.svelte`, `BranchItemRow.svelte` & `BranchCard.svelte`: Branch Cleaner list grouped by repository, in the same Compact/Detailed densities as the worktree list. Neither branch view carries a per-branch delete action — branch deletion is batch-only by design, so the reviewed batch flow stays the single destructive path.
+  - `BranchStatusBadges.svelte`: The Default / In-worktree / Merged / Remote-gone badge set, shared by the row and the card so the two densities can't describe the same branch differently.
+  - `BranchFilterBar.svelte`: Status filter chips (All/Merged/Remote gone/Protected) for the Branch Cleaner, same single-pass tally pattern as `AccountFilterBar.svelte`, plus the cross-repository "select all filtered" control.
   - `BranchBatchDeleteModal.svelte` & `BranchActionBar.svelte`: Branch Cleaner's review/confirm modal and floating selection dock, mirroring `BatchDeleteModal.svelte`/`BatchActionBar.svelte` with "unmerged" in place of "dirty".
 - `src/lib/actions/`:
   - `closeOnEscape.ts`: Shared Svelte action wiring `Escape` to a modal's close handler (`{ enabled, onClose }`), used by every modal so Escape-to-close can't silently go missing from a new one.
+- `src/lib/utils/`:
+  - `protectionReason.ts`: Single source for the wording of *why* a branch or worktree is protected or destructive to delete, so a row's tooltip and a dialog's warning can't drift apart. It describes the server-side guards (ADR 0003, ADR 0006); it never enforces them.
 - `src/lib/stores/`:
-  - `worktrees.ts`: Stores list of discovered worktrees and scanning states.
+  - `worktrees.ts`: Discovered worktrees, scan state, and `filteredRepos` — the filtered set both `WorktreeList` and the "select all filtered" control read, so neither can compute a different "all".
   - `ghAuth.ts`: Active GitHub account and switcher logic.
   - `appConfig.ts`: Application preferences, default editor, default terminal, and watch paths.
   - `editors.ts`: Installed editor (`installedEditors`) and terminal (`installedTerminals`) detection.
-  - `branchCleaner.ts`: Scanned branch list, scan state, and the selected branch status filter.
+  - `branchCleaner.ts`: Scanned branch list, scan state, the selected branch status filter, and the matching `filteredBranches` derived set.
   - `branchSelection.ts`: Batch-selection map for the Branch Cleaner, keyed by `repoPath::branchName` since branch names — unlike worktree paths — aren't globally unique across repos.
+  - `forceDeleteIntent.ts`: Whether the user has opted into forcing, kept separately for worktrees and branches, so closing and reopening a dialog over the same selection doesn't discard the choice.
 
 ### State Update Strategy
 `App.svelte` patches the `scannedRepos` store in place for single-worktree mutations (create, delete, branch switch) using the fresh `worktreeInfo` the backend returns for create/checkout, or the known path for delete — mirroring the pattern the batch-delete flow already used. A full rescan (`scan_worktrees`) is reserved for the manual Refresh action and as a defensive fallback if a mutation response doesn't carry `worktreeInfo`. See ADR 0005 for the reasoning.

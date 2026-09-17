@@ -58,7 +58,8 @@ In **Workspace Companion**, every worktree entry presents both the **Git Branch*
 
 ## 3. View Density Modes
 
-You can switch between view layouts using the **View Mode** toggle button (`▤ / ▦`) in the top-right toolbar:
+You can switch between view layouts using the **View Mode** toggle button (`▤ / ▦`) in the top-right
+toolbar. The setting is global: it applies to the worktree list and to the Branch Cleaner alike.
 
 ### A. Compact Tree View (`▤`)
 - Displays repositories as a hierarchical tree:
@@ -79,31 +80,38 @@ You can switch between view layouts using the **View Mode** toggle button (`▤ 
 
 When cleaning up multiple feature worktrees or stale AI agent worktrees:
 
-1. **Select Worktrees**: Click the checkbox on any secondary worktree row, or click **`Select All`** on the repository header.
+1. **Select Worktrees**: Click the checkbox on any secondary worktree row, click **`Select All`** on the repository header, or click **`Select all (N)`** in the filter bar to take every worktree matching the active filters across all repositories at once.
 2. **Review Pending Count**: The bottom floating bar indicates `N worktrees selected`.
 3. **Trigger Deletion**: Click **`Delete Selected`**.
-4. **Safety Verification**: Workspace Companion executes pre-flight dirty checks (`git status --porcelain`) on each selected worktree. If any worktree contains uncommitted modifications, it prompts for explicit confirmation, preventing accidental code loss.
+4. **Safety Verification**: Workspace Companion executes pre-flight dirty checks (`git status --porcelain`) on each selected worktree. Worktrees with uncommitted modifications are skipped unless you tick **"Force delete dirty worktrees permanently"** and type `FORCE` into the confirmation field that appears.
+5. **Partial results**: A batch where the only refusals were protections (a dirty worktree, the root worktree) closes on its own and reports how many were skipped. The dialog stays open only when something genuinely failed.
 
 ---
 
 ## 5. Branch Cleaner Workflow
 
-Toggle to the **Branch Cleaner** with the view switch in the top toolbar (next to `[▦/▤ View]`). Unlike
+Switch to **Branches** with the segmented `Worktrees | Branches` control in the top toolbar. Unlike
 the worktree list, this view lists **every local branch** across your managed repos — including
 branches that never had a worktree of their own, which is most of what piles up after a PR merges.
 
 1. **Filter**: Use the status chips (`All` / `Merged` / `Remote gone` / `Protected`) to narrow the
-   list. `Protected` branches (the default branch, or any branch checked out in a worktree) show a
-   lock icon instead of a checkbox — they can never be selected for deletion.
-2. **Select**: Click a branch's checkbox, or **`Select All`** on a repository's header to select every
-   deletable branch in that repo at once.
+   list. Protected branches (the default branch, or any branch checked out in a worktree) show a
+   lock icon instead of a checkbox — they can never be selected for deletion, and their badge names
+   which of the two rules applies.
+2. **Select**: Click a branch's checkbox, click **`Select All`** on a repository's header, or click
+   **`Select all (N)`** in the filter bar to take every deletable branch matching the active filter
+   across all repositories at once.
 3. **Review & Confirm**: The floating bar shows the selected count. Clicking **`Delete Selected`**
    opens a review dialog listing each branch as `merged` or `unmerged`.
 4. **Force unmerged branches (optional)**: Unmerged branches are skipped by default — Git itself
    refuses to delete a branch that isn't merged. Check **"Force delete unmerged branches
-   permanently"** to delete them anyway (`git branch -D`).
+   permanently"** and type `FORCE` into the confirmation field to delete them anyway
+   (`git branch -D`).
 5. **Safety guarantee**: The default branch and any branch checked out in a worktree are never
    deletable, even with force enabled — this is enforced on the backend, not just hidden in the UI.
+6. **Checkout**: Every branch row offers an action on the right. For a branch that already has a
+   worktree it jumps to that worktree and highlights it; for one that doesn't, it opens the New
+   Worktree dialog preloaded with that branch.
 
 ---
 
@@ -130,7 +138,7 @@ Workspace Companion is designed to be operated without leaving the keyboard:
 | Shortcut | Context | Action |
 | :--- | :--- | :--- |
 | `Ctrl+Shift+W` | Global | Toggle the floating window |
-| `Escape` | Any open modal | Close it (Branch Switcher, New Worktree, Watched Folders, Orphan Cleaner, Batch Delete, Branch Batch Delete, GitHub Account) |
+| `Escape` | Any open modal | Close it (Branch Switcher, New Worktree, Watched Folders, Remove Worktree, Batch Delete, Branch Batch Delete, GitHub Account) |
 | `↑` / `↓` | Branch Switcher Modal | Move the highlighted branch |
 | `Enter` | Branch Switcher Modal | Checkout the highlighted branch |
 | `Enter` / `Escape` | Fast Worktree Creator & New Worktree Modal branch field | Create now / clear and collapse |

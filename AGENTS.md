@@ -16,7 +16,7 @@ This document serves as the operational manual, architecture reference, and work
   - Tauri IPC command handlers in `src-tauri/src/commands/` (`worktrees.rs`, `gh_auth.rs`).
 - **`src/` (Svelte 5 & TypeScript Frontend)**:
   - `App.svelte`: Root floating panel, active views, and global shortcuts.
-  - `lib/components/`: Modular Svelte 5 components (`WorktreeList`, `WorktreeCard`, `NewWorktreeModal`, `BranchSwitcherModal`, `OrphanCleanerModal`, `WatchFoldersModal`, `GhAccountModal`, `Header`, `AccountFilterBar`).
+  - `lib/components/`: Modular Svelte 5 components (`WorktreeList`, `WorktreeCard`, `NewWorktreeModal`, `BranchSwitcherModal`, `RemoveWorktreeModal`, `WatchFoldersModal`, `GhAccountModal`, `Header`, `AccountFilterBar`).
   - `lib/stores/`: Reactive store modules (`worktrees.ts`, `ghAuth.ts`, `appConfig.ts`, `editors.ts`).
   - `lib/types.ts`: TypeScript contracts and data structures.
   - Modern pastel theming and Tailwind CSS styling.
