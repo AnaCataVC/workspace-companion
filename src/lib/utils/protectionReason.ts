@@ -21,15 +21,19 @@ export interface WorktreeProtectionInput {
   uncommittedFilesCount?: number;
   isOrphaned?: boolean;
   orphanReason?: string;
+  locked?: string | null;
 }
 
 /**
  * Why removing this worktree is blocked or destructive, or an empty string when it is an ordinary
  * clean removal. Ordered by how hard the block is: the main worktree can never be removed, a dirty
- * one only with force (ADR 0003), and an orphaned one is merely informative.
+ * or locked one only with force, and an orphaned one is merely informative.
  */
 export function worktreeProtectionReason(worktree: WorktreeProtectionInput): string {
   if (worktree.isMain) return 'Main / root worktree — never deletable';
+  if (worktree.locked) {
+    return `Locked worktree — ${worktree.locked}`;
+  }
   if (worktree.isDirty) {
     const count = worktree.uncommittedFilesCount;
     return count

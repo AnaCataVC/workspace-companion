@@ -380,6 +380,20 @@
     }
   }
 
+  function handleWorktreeUpdated(event: CustomEvent<WorktreeInfo>) {
+    const freshInfo = event.detail;
+    if (!freshInfo) return;
+    selectedWorktreeForBranchSwitch = freshInfo;
+    const repoPath = selectedRepoForBranchSwitch;
+    scannedRepos.update((repos) =>
+      repos.map((r) =>
+        r.repoPath === repoPath
+          ? { ...r, worktrees: r.worktrees.map((w) => (w.path === freshInfo.path ? freshInfo : w)) }
+          : r
+      )
+    );
+  }
+
   // New Worktree Modal handlers
   function handleOpenNewWorktree(repoPath?: string) {
     initialRepoForNewWorktree = repoPath || ($scannedRepos[0]?.repoPath || '');
@@ -527,6 +541,21 @@
     } finally {
       isBatchDeleting = false;
     }
+  }
+
+  function handleBatchItemDeleted(event: CustomEvent<{ worktreePath: string; repoPath: string }>) {
+    const { worktreePath, repoPath } = event.detail;
+    scannedRepos.update((repos) =>
+      repos
+        .map((r) =>
+          r.repoPath === repoPath
+            ? { ...r, worktrees: r.worktrees.filter((w) => w.path !== worktreePath) }
+            : r
+        )
+        .filter((r) => r.worktrees.length > 0)
+    );
+    batchSelection.deselect(worktreePath);
+    notifications.success('Worktree removed', `Force unlocked and removed: ${worktreePath}`);
   }
 
   function handleCleanAllOrphans(event: CustomEvent<string>) {
@@ -769,6 +798,7 @@
       errorMessage={batchDeleteError}
       on:close={() => (isBatchDeleteModalOpen = false)}
       on:confirmDelete={handleConfirmBatchDelete}
+      on:itemDeleted={handleBatchItemDeleted}
     />
   {:else}
     <BranchFilterBar />
@@ -809,6 +839,7 @@
     errorMessage={branchSwitchError}
     on:close={() => (isBranchSwitcherOpen = false)}
     on:switchBranch={handleConfirmSwitchBranch}
+    on:worktreeUpdated={handleWorktreeUpdated}
   />
 
   <NewWorktreeModal

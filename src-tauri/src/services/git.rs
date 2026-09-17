@@ -1019,6 +1019,44 @@ impl GitService {
         })
     }
 
+    /// Stashes uncommitted and untracked changes in the given worktree.
+    pub fn stash_worktree<P: AsRef<Path>>(
+        worktree_path: P,
+        message: Option<&str>,
+    ) -> Result<String, String> {
+        let wt = worktree_path.as_ref();
+        if !wt.exists() {
+            return Err(format!("Worktree path does not exist: {}", wt.display()));
+        }
+
+        let custom_msg = message.unwrap_or("Stash before branch switch - Workspace Companion");
+        Self::run_git(wt, &["stash", "push", "-u", "-m", custom_msg])
+    }
+
+    /// Discards all tracked modifications and untracked files in the given worktree.
+    pub fn discard_worktree_changes<P: AsRef<Path>>(
+        worktree_path: P,
+    ) -> Result<String, String> {
+        let wt = worktree_path.as_ref();
+        if !wt.exists() {
+            return Err(format!("Worktree path does not exist: {}", wt.display()));
+        }
+
+        let reset_out = Self::run_git(wt, &["reset", "--hard", "HEAD"])?;
+        let clean_out = Self::run_git(wt, &["clean", "-fd"])?;
+
+        Ok(format!("{}\n{}", reset_out, clean_out).trim().to_string())
+    }
+
+    /// Unlocks a locked worktree in the repository.
+    pub fn unlock_worktree<P: AsRef<Path>>(
+        repo_path: P,
+        worktree_path: &str,
+    ) -> Result<String, String> {
+        let repo = repo_path.as_ref();
+        Self::run_git(repo, &["worktree", "unlock", worktree_path])
+    }
+
     /// Generates a standardized sibling directory path for a new worktree.
     pub fn suggest_worktree_path<P: AsRef<Path>>(
         repo_path: P,

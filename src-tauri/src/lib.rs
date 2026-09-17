@@ -6,8 +6,10 @@ use commands::branches::{remove_branches_batch, scan_branches_for_cleanup};
 use commands::gh_auth::{get_gh_accounts, switch_gh_account};
 use commands::worktrees::{
     checkout_worktree_branch, create_worktree, detect_installed_editors, get_app_config,
-    get_worktree_diff_summary, list_branches, open_in_editor, open_in_terminal, open_path, prune_worktrees,
-    remove_worktree, remove_worktrees_batch, save_app_config, scan_worktrees, suggest_worktree_path,
+    get_worktree_diff_summary, git_discard_worktree_changes, git_stash_worktree,
+    git_unlock_worktree, list_branches, open_in_editor, open_in_terminal, open_path,
+    prune_worktrees, remove_worktree, remove_worktrees_batch, save_app_config, scan_worktrees,
+    suggest_worktree_path,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -36,6 +38,9 @@ pub fn run() {
             checkout_worktree_branch,
             suggest_worktree_path,
             create_worktree,
+            git_stash_worktree,
+            git_discard_worktree_changes,
+            git_unlock_worktree,
             scan_branches_for_cleanup,
             remove_branches_batch,
             get_gh_accounts,

@@ -39,6 +39,15 @@ function createBatchSelectionStore() {
       });
     },
 
+    deselect: (path: string) => {
+      update((map) => {
+        if (!map.has(path)) return map;
+        const next = new Map(map);
+        next.delete(path);
+        return next;
+      });
+    },
+
     selectAll: (targets: BatchDeleteTarget[]) => {
       update(() => {
         const next = new Map<string, BatchDeleteTarget>();

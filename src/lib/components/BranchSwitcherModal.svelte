@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onDestroy } from 'svelte';
   import type { WorktreeInfo, WorktreeBranchesResponse, BranchEntry } from '../types';
   import {
     GitBranch,
@@ -10,9 +10,14 @@
     X,
     Loader2,
     Globe,
-    GitCommit
+    GitCommit,
+    Archive,
+    Trash2,
+    Code2
   } from 'lucide-svelte';
   import { closeOnEscape } from '../actions/closeOnEscape';
+  import { invoke } from '@tauri-apps/api/core';
+  import { appConfig } from '../stores/appConfig';
 
   export let isOpen: boolean = false;
   export let worktree: WorktreeInfo | null = null;
@@ -25,11 +30,96 @@
   const dispatch = createEventDispatcher<{
     close: void;
     switchBranch: { worktree: WorktreeInfo; targetBranch: string };
+    worktreeUpdated: WorktreeInfo;
   }>();
 
   let searchQuery: string = '';
   let highlightedIndex: number = 0;
   let branchButtons: (HTMLButtonElement | null)[] = [];
+
+  let isStashing = false;
+  let isDiscarding = false;
+  $: isResolvingDirty = isStashing || isDiscarding;
+  let actionStatusMessage: string | null = null;
+  let isConfirmingDiscard = false;
+  let discardCountdown = 5;
+  let discardTimer: any = null;
+
+  onDestroy(() => {
+    if (discardTimer) clearInterval(discardTimer);
+  });
+
+  $: if (!isOpen) {
+    if (discardTimer) clearInterval(discardTimer);
+    isConfirmingDiscard = false;
+    actionStatusMessage = null;
+  }
+
+  function startDiscardConfirmation() {
+    isConfirmingDiscard = true;
+    discardCountdown = 5;
+    if (discardTimer) clearInterval(discardTimer);
+    discardTimer = setInterval(() => {
+      discardCountdown -= 1;
+      if (discardCountdown <= 0) {
+        clearInterval(discardTimer);
+        isConfirmingDiscard = false;
+      }
+    }, 1000);
+  }
+
+  async function handleStash() {
+    if (!worktree || isResolvingDirty) return;
+    isStashing = true;
+    errorMessage = null;
+    actionStatusMessage = null;
+    try {
+      const updatedWt = await invoke<WorktreeInfo>('git_stash_worktree', {
+        worktreePath: worktree.path,
+        message: 'Stash before branch switch - Workspace Companion'
+      });
+      worktree = updatedWt;
+      dispatch('worktreeUpdated', updatedWt);
+      actionStatusMessage = 'Changes stashed safely. You can now select a branch!';
+    } catch (err: any) {
+      errorMessage = err?.message || err?.toString() || 'Failed to stash changes';
+    } finally {
+      isStashing = false;
+    }
+  }
+
+  async function handleConfirmDiscard() {
+    if (!worktree || isResolvingDirty) return;
+    if (discardTimer) clearInterval(discardTimer);
+    isConfirmingDiscard = false;
+    isDiscarding = true;
+    errorMessage = null;
+    actionStatusMessage = null;
+    try {
+      const updatedWt = await invoke<WorktreeInfo>('git_discard_worktree_changes', {
+        worktreePath: worktree.path
+      });
+      worktree = updatedWt;
+      dispatch('worktreeUpdated', updatedWt);
+      actionStatusMessage = 'All uncommitted changes discarded. Worktree is clean!';
+    } catch (err: any) {
+      errorMessage = err?.message || err?.toString() || 'Failed to discard changes';
+    } finally {
+      isDiscarding = false;
+    }
+  }
+
+  async function handleOpenInEditor() {
+    if (!worktree) return;
+    try {
+      await invoke('open_in_editor', {
+        editor: $appConfig.defaultEditor || 'vscode',
+        path: worktree.path
+      });
+    } catch (err: any) {
+      errorMessage = err?.message || err?.toString() || 'Failed to open in editor';
+    }
+  }
 
   $: filteredBranches = (branchesResponse?.branches || []).filter(b => {
     const q = searchQuery.toLowerCase().trim();
@@ -58,7 +148,7 @@
   }
 
   function handleSelectBranch(branch: BranchEntry) {
-    if (!worktree || branch.isCurrent || branch.isLockedByOther || isSwitching || worktree.isDirty) {
+    if (!worktree || branch.isCurrent || branch.isLockedByOther || isSwitching || isResolvingDirty || worktree.isDirty) {
       return;
     }
     dispatch('switchBranch', {
@@ -130,16 +220,87 @@
         </button>
       </div>
 
-      <!-- Warning: Dirty Worktree -->
+      <!-- Warning: Dirty Worktree with 1-Click Resolutions -->
       {#if worktree.isDirty}
-        <div class="rounded-lg bg-rose-950/70 border border-rose-800/60 p-2.5 flex items-start gap-2 text-rose-300 text-xs">
-          <AlertTriangle size={14} class="flex-shrink-0 mt-0.5" />
-          <div class="space-y-0.5">
-            <p class="font-medium">Cannot switch branch: Uncommitted changes</p>
-            <p class="text-[11px] text-rose-300/80">
-              {worktree.uncommittedFilesCount ? `${worktree.uncommittedFilesCount} modified/untracked files` : 'Modified files'} detected. Please commit, stash, or discard them first.
-            </p>
+        <div class="rounded-lg bg-rose-950/70 border border-rose-800/60 p-3 flex flex-col gap-2.5 text-rose-300 text-xs">
+          <div class="flex items-start gap-2">
+            <AlertTriangle size={15} class="flex-shrink-0 mt-0.5 text-rose-400" />
+            <div class="space-y-0.5 min-w-0 flex-1">
+              <p class="font-medium text-rose-200">Cannot switch branch: Uncommitted changes</p>
+              <p class="text-[11px] text-rose-300/80">
+                {worktree.uncommittedFilesCount ? `${worktree.uncommittedFilesCount} modified/untracked files` : 'Modified files'} detected. Choose an action to proceed:
+              </p>
+            </div>
           </div>
+
+          <!-- 1-Click Action Buttons -->
+          <div class="flex flex-wrap items-center gap-2 pt-1 border-t border-rose-900/50">
+            <!-- Stash Changes Button -->
+            <button
+              type="button"
+              disabled={isResolvingDirty || isSwitching}
+              on:click={handleStash}
+              class="px-2.5 py-1 rounded-md bg-indigo-900/80 hover:bg-indigo-800 border border-indigo-700/60 text-indigo-100 font-medium text-[11px] flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50"
+              title="Save changes to Git stash (git stash push -u) and unlock branch selection"
+            >
+              {#if isStashing}
+                <Loader2 size={12} class="animate-spin text-indigo-300" />
+                <span>Stashing...</span>
+              {:else}
+                <Archive size={12} class="text-indigo-300" />
+                <span>Stash Changes</span>
+              {/if}
+            </button>
+
+            <!-- Discard Changes Button (Double Confirmation) -->
+            {#if !isConfirmingDiscard}
+              <button
+                type="button"
+                disabled={isResolvingDirty || isSwitching}
+                on:click={startDiscardConfirmation}
+                class="px-2.5 py-1 rounded-md bg-neutral-900 hover:bg-rose-950/80 border border-neutral-700/80 hover:border-rose-700/60 text-neutral-300 hover:text-rose-200 font-medium text-[11px] flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                title="Discard all uncommitted and untracked changes"
+              >
+                <Trash2 size={12} class="text-neutral-400" />
+                <span>Discard Changes...</span>
+              </button>
+            {:else}
+              <button
+                type="button"
+                disabled={isResolvingDirty || isSwitching}
+                on:click={handleConfirmDiscard}
+                class="px-2.5 py-1 rounded-md bg-rose-700 hover:bg-rose-600 border border-rose-500 text-white font-medium text-[11px] flex items-center gap-1.5 transition-all animate-pulse cursor-pointer disabled:opacity-50"
+                title="Click again to permanently discard all modifications (git reset + clean)"
+              >
+                {#if isDiscarding}
+                  <Loader2 size={12} class="animate-spin" />
+                  <span>Discarding...</span>
+                {:else}
+                  <AlertTriangle size={12} />
+                  <span>Confirm Discard? ({discardCountdown}s)</span>
+                {/if}
+              </button>
+            {/if}
+
+            <!-- Open in Editor Button -->
+            <button
+              type="button"
+              disabled={isResolvingDirty || isSwitching}
+              on:click={handleOpenInEditor}
+              class="px-2.5 py-1 rounded-md bg-neutral-900 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-300 hover:text-neutral-100 text-[11px] flex items-center gap-1.5 transition-all ml-auto cursor-pointer"
+              title="Open worktree in default code editor to inspect changes"
+            >
+              <Code2 size={12} class="text-neutral-400" />
+              <span>Open in Editor</span>
+            </button>
+          </div>
+
+          {#if actionStatusMessage}
+            <div class="text-[11px] font-mono text-emerald-300 bg-emerald-950/60 border border-emerald-800/50 rounded px-2 py-1 flex items-center gap-1.5">
+              <Check size={12} class="text-emerald-400" />
+              <span>{actionStatusMessage}</span>
+            </div>
+          {/if}
         </div>
       {/if}
 
@@ -178,7 +339,7 @@
               bind:this={branchButtons[idx]}
               on:click={() => handleSelectBranch(branch)}
               on:mouseenter={() => (highlightedIndex = idx)}
-              disabled={branch.isCurrent || branch.isLockedByOther || isSwitching || (worktree.isDirty ?? false)}
+              disabled={branch.isCurrent || branch.isLockedByOther || isSwitching || isResolvingDirty || (worktree.isDirty ?? false)}
               class="w-full text-left p-2 rounded-lg border transition-all flex items-center justify-between text-xs font-mono
                 {branch.isCurrent
                   ? 'bg-indigo-950/40 border-indigo-800/50 text-indigo-300 cursor-default'

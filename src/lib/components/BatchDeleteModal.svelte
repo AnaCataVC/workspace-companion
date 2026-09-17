@@ -1,10 +1,11 @@
 <script lang="ts">
   import type { BatchDeleteTarget, BatchDeleteSummary } from '../types';
-  import { Trash2, X, ShieldAlert, CheckCircle2, Flame, GitBranch } from 'lucide-svelte';
+  import { Trash2, X, ShieldAlert, CheckCircle2, Flame, GitBranch, Unlock, Loader2 } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
   import { closeOnEscape } from '../actions/closeOnEscape';
   import { forceBatchWorktreeDelete } from '../stores/forceDeleteIntent';
   import { worktreeProtectionReason } from '../utils/protectionReason';
+  import { invoke } from '@tauri-apps/api/core';
 
   export let isOpen: boolean = false;
   export let targets: BatchDeleteTarget[] = [];
@@ -15,6 +16,7 @@
   const dispatch = createEventDispatcher<{
     close: void;
     confirmDelete: { targets: BatchDeleteTarget[]; force: boolean };
+    itemDeleted: { worktreePath: string; repoPath: string };
   }>();
 
   /**
@@ -56,7 +58,7 @@
   }
 
   function handleConfirm() {
-    if (targets.length === 0) return;
+    if (targets.length === 0 || isDeleting) return;
     const force = $forceBatchWorktreeDelete;
     const finalTargets = targets.map((t) => ({
       ...t,
@@ -71,6 +73,54 @@
   function getShortBranch(fullBranch: string | null | undefined): string {
     if (!fullBranch) return '(detached HEAD)';
     return fullBranch.replace('refs/heads/', '');
+  }
+
+  let unlockingPaths = new Set<string>();
+
+  function isLockedError(errorMsg: string): boolean {
+    const lower = (errorMsg || '').toLowerCase();
+    return lower.includes('locked working tree') || lower.includes('remove -f -f') || lower.includes('unlock first');
+  }
+
+  async function handleUnlockAndRetry(worktreePath: string) {
+    const target = targets.find((t) => t.worktreePath === worktreePath);
+    if (!target || !summary) return;
+
+    unlockingPaths.add(worktreePath);
+    unlockingPaths = new Set(unlockingPaths);
+
+    try {
+      // 1. Unlock worktree via git worktree unlock
+      await invoke('git_unlock_worktree', {
+        repoPath: target.repoPath,
+        worktreePath: target.worktreePath
+      });
+
+      // 2. Remove worktree with force
+      await invoke('remove_worktree', {
+        repoPath: target.repoPath,
+        worktreePath: target.worktreePath,
+        force: true
+      });
+
+      // 3. Update summary state reactively
+      summary.errors = summary.errors.filter((e) => e.worktreePath !== worktreePath);
+      summary.deletedCount += 1;
+      summary.deletedPaths = [...summary.deletedPaths, worktreePath];
+      summary = { ...summary };
+
+      dispatch('itemDeleted', { worktreePath, repoPath: target.repoPath });
+    } catch (err: any) {
+      console.error('Failed to unlock and remove worktree:', err);
+      const errIdx = summary.errors.findIndex((e) => e.worktreePath === worktreePath);
+      if (errIdx !== -1) {
+        summary.errors[errIdx].error = `Unlock & remove failed: ${err?.message || err?.toString()}`;
+        summary = { ...summary };
+      }
+    } finally {
+      unlockingPaths.delete(worktreePath);
+      unlockingPaths = new Set(unlockingPaths);
+    }
   }
 </script>
 
@@ -128,6 +178,27 @@
                     {err.worktreePath}
                   </p>
                   <p class={err.kind === 'skipped' ? 'text-amber-300/80' : 'text-rose-300/80'}>{err.error}</p>
+
+                  {#if isLockedError(err.error)}
+                    <div class="mt-1.5 flex items-center justify-between pt-1.5 border-t border-rose-900/40">
+                      <span class="text-[10px] text-rose-300 font-sans">Locked by process or external agent</span>
+                      <button
+                        type="button"
+                        disabled={unlockingPaths.has(err.worktreePath)}
+                        on:click={() => handleUnlockAndRetry(err.worktreePath)}
+                        class="px-2 py-0.5 rounded bg-rose-800 hover:bg-rose-700 text-white font-sans text-[10px] font-medium transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        title="Run git worktree unlock and force remove"
+                      >
+                        {#if unlockingPaths.has(err.worktreePath)}
+                          <Loader2 size={10} class="animate-spin" />
+                          <span>Unlocking & Removing...</span>
+                        {:else}
+                          <Unlock size={10} />
+                          <span>Force Unlock & Remove</span>
+                        {/if}
+                      </button>
+                    </div>
+                  {/if}
                 </div>
               {/each}
             </div>

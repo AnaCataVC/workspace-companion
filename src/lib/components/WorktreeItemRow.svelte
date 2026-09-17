@@ -152,6 +152,16 @@
 
     <!-- Status Badges -->
     <div class="flex items-center gap-1 flex-shrink-0">
+      {#if worktree.locked}
+        <span
+          class="px-1.5 py-0.5 rounded-full bg-amber-950/80 text-amber-300 border border-amber-800/60 text-[9px] font-sans flex items-center gap-0.5"
+          title={`Locked: ${worktree.locked}`}
+        >
+          <Lock size={9} />
+          locked
+        </span>
+      {/if}
+
       {#if worktree.isDirty}
         <DirtyDiffPopover
           worktreePath={worktree.path}

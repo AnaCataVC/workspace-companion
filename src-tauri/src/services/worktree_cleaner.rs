@@ -345,6 +345,8 @@ impl WorktreeCleanerService {
 
         let mut args = vec!["worktree", "remove"];
         if force {
+            // Passing --force twice allows removing both dirty and locked worktrees in Git
+            args.push("--force");
             args.push("--force");
         }
         args.push(worktree_path);
@@ -420,9 +422,11 @@ impl WorktreeCleanerService {
                         }
                     }
 
-                    // git worktree remove [--force] <path>
+                    // git worktree remove [--force --force] <path>
                     let mut args = vec!["worktree", "remove"];
                     if item.force {
+                        // Passing --force twice allows removing both dirty and locked worktrees in Git
+                        args.push("--force");
                         args.push("--force");
                     }
                     args.push(&item.worktree_path);

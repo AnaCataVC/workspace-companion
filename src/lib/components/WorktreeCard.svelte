@@ -133,6 +133,16 @@
 
     <!-- Status Badges -->
     <div class="flex items-center gap-1">
+      {#if worktree.locked}
+        <span
+          class="px-1.5 py-0.5 rounded bg-amber-950/70 text-amber-300 border border-amber-800/50 text-[10px] flex items-center gap-0.5 font-sans"
+          title={`Locked: ${worktree.locked}`}
+        >
+          <Lock size={10} />
+          Locked
+        </span>
+      {/if}
+
       <!-- Named reason first, generic "Orphan" only when neither branch flag explains it. -->
       {#if worktree.isBranchMerged}
         <span

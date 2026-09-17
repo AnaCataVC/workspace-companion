@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { WorktreeInfo } from '../types';
-  import { AlertTriangle, Trash2, X, ShieldAlert } from 'lucide-svelte';
+  import { AlertTriangle, Trash2, X, ShieldAlert, Lock } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
   import { closeOnEscape } from '../actions/closeOnEscape';
   import { forceSingleWorktreeDelete } from '../stores/forceDeleteIntent';
@@ -103,16 +103,28 @@
             </div>
           </div>
         {/if}
+
+        {#if worktree.locked}
+          <div class="mt-1 p-2 rounded bg-amber-950/60 border border-amber-800/50 flex items-start gap-1.5 text-amber-200 text-[11px]">
+            <Lock size={14} class="flex-shrink-0 text-amber-400 mt-0.5" />
+            <div>
+              <p class="font-medium">Locked worktree</p>
+              <p class="text-amber-300/80 text-[10px]">
+                {worktree.locked}
+              </p>
+            </div>
+          </div>
+        {/if}
       </div>
 
-      {#if worktree.isDirty}
+      {#if worktree.isDirty || worktree.locked}
         <label class="flex items-center gap-2 text-xs text-neutral-300 cursor-pointer select-none">
           <input
             type="checkbox"
             bind:checked={$forceSingleWorktreeDelete}
             class="rounded border-neutral-700 bg-neutral-950 text-rose-500 focus:ring-rose-500 focus:ring-offset-neutral-900"
           />
-          <span>Force delete even with uncommitted changes</span>
+          <span>Force delete (overrides uncommitted changes and locks)</span>
         </label>
 
         {#if $forceSingleWorktreeDelete}
@@ -156,7 +168,7 @@
         <button
           type="button"
           on:click={handleConfirm}
-          disabled={isDeleting || worktree.isMain || (worktree.isDirty && !$forceSingleWorktreeDelete) || ($forceSingleWorktreeDelete && !isForceConfirmed)}
+          disabled={isDeleting || worktree.isMain || ((worktree.isDirty || Boolean(worktree.locked)) && !$forceSingleWorktreeDelete) || ($forceSingleWorktreeDelete && !isForceConfirmed)}
           class="px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-600 hover:bg-rose-500 disabled:opacity-40 disabled:hover:bg-rose-600 text-white transition-colors flex items-center gap-1.5 shadow-lg shadow-rose-600/20"
         >
           {#if isDeleting}

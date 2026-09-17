@@ -1,7 +1,7 @@
 use crate::services::config::{AppConfig, ConfigService};
 use crate::services::git::{
     CheckoutBranchResult, CreateWorktreeResult, EditorInfo, GitService, SuggestWorktreePathResult,
-    WorktreeBranchesResponse, WorktreeDiffSummary,
+    WorktreeBranchesResponse, WorktreeDiffSummary, WorktreeEntry,
 };
 use crate::services::worktree_cleaner::{
     BatchDeleteSummary, BatchDeleteTarget, WorktreeCleanerService,
@@ -167,3 +167,41 @@ pub async fn create_worktree(
     .await
     .map_err(|e| e.to_string())?
 }
+
+#[tauri::command]
+pub async fn git_stash_worktree(
+    worktree_path: String,
+    message: Option<String>,
+) -> Result<WorktreeEntry, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        GitService::stash_worktree(&worktree_path, message.as_deref())?;
+        WorktreeCleanerService::build_single_worktree_info(&worktree_path, &worktree_path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_discard_worktree_changes(
+    worktree_path: String,
+) -> Result<WorktreeEntry, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        GitService::discard_worktree_changes(&worktree_path)?;
+        WorktreeCleanerService::build_single_worktree_info(&worktree_path, &worktree_path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_unlock_worktree(
+    repo_path: String,
+    worktree_path: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        GitService::unlock_worktree(&repo_path, &worktree_path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
