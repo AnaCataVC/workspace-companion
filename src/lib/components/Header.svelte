@@ -23,13 +23,53 @@
 
 <header class="p-3 bg-neutral-950/80 backdrop-blur border-b border-neutral-800 flex flex-col gap-2">
   <div class="flex items-center justify-between">
+    <!-- Left Navigation: Segmented View Switcher and Quick Action -->
     <div class="flex items-center gap-2">
-      <img src="/icon.png" alt="Workspace Companion" class="w-6 h-6 rounded-md shadow-md object-contain" />
-      <div>
-        <h1 class="text-xs font-semibold tracking-wide text-neutral-200 uppercase">Workspace Companion</h1>
+      <!-- Segmented view switch: each half is its own target, so the label always names the view
+           it takes you to instead of flipping meaning with the current state. -->
+      <div class="flex items-center rounded-md bg-neutral-900 border border-neutral-800 p-0.5 gap-0.5">
+        <button
+          type="button"
+          on:click={() => onSetView('worktrees')}
+          title="Show worktrees"
+          aria-pressed={activeView === 'worktrees'}
+          class="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded transition-colors
+            {activeView === 'worktrees'
+              ? 'bg-indigo-600 text-white shadow-xs'
+              : 'text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'}"
+        >
+          <FolderTree size={13} />
+          <span>Worktrees</span>
+        </button>
+        <button
+          type="button"
+          on:click={() => onSetView('branches')}
+          title="Show branches"
+          aria-pressed={activeView === 'branches'}
+          class="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded transition-colors
+            {activeView === 'branches'
+              ? 'bg-indigo-600 text-white shadow-xs'
+              : 'text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'}"
+        >
+          <GitBranch size={13} />
+          <span>Branches</span>
+        </button>
       </div>
+
+      {#if activeView === 'worktrees'}
+        <!-- New Worktree Button -->
+        <button
+          on:click={onOpenNewWorktreeModal}
+          title="Create new Git worktree"
+          class="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-indigo-600 hover:bg-indigo-500 text-white transition-colors shadow-xs"
+        >
+          <Plus size={13} />
+          <span>New</span>
+        </button>
+      {/if}
     </div>
 
+    <!-- Right Controls: View Density & Global Utility Buttons -->
     <div class="flex items-center gap-1.5">
       <!-- View Density Toggle -->
       <button
@@ -44,49 +84,6 @@
           <LayoutGrid size={14} class="text-neutral-400" />
         {/if}
       </button>
-
-      {#if activeView === 'worktrees'}
-        <!-- New Worktree Button -->
-        <button
-          on:click={onOpenNewWorktreeModal}
-          title="Create new Git worktree"
-          class="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-indigo-600 hover:bg-indigo-500 text-white transition-colors shadow-xs"
-        >
-          <Plus size={13} />
-          <span>New</span>
-        </button>
-      {/if}
-
-      <!-- Segmented view switch: each half is its own target, so the label always names the view
-           it takes you to instead of flipping meaning with the current state. -->
-      <div class="flex items-center rounded-md bg-neutral-900 border border-neutral-800 p-0.5 gap-0.5">
-        <button
-          type="button"
-          on:click={() => onSetView('worktrees')}
-          title="Show worktrees"
-          aria-pressed={activeView === 'worktrees'}
-          class="flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded transition-colors
-            {activeView === 'worktrees'
-              ? 'bg-indigo-600 text-white'
-              : 'text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'}"
-        >
-          <FolderTree size={13} />
-          <span>Worktrees</span>
-        </button>
-        <button
-          type="button"
-          on:click={() => onSetView('branches')}
-          title="Show branches"
-          aria-pressed={activeView === 'branches'}
-          class="flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded transition-colors
-            {activeView === 'branches'
-              ? 'bg-indigo-600 text-white'
-              : 'text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'}"
-        >
-          <GitBranch size={13} />
-          <span>Branches</span>
-        </button>
-      </div>
 
       <!-- GitHub Account Badge Button -->
       <button

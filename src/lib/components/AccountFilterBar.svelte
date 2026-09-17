@@ -17,16 +17,20 @@
   );
 
   // Single-pass O(N) account tally, shared by every account pill instead of
-  // each pill re-filtering the full repo list (see statusCounts below for the same pattern)
+  // each pill re-filtering the full repo list
   $: accountStats = (() => {
-    const counts = new Map<string, number>();
+    const counts: Record<string, number> = {};
     let unassigned = 0;
     const repos = $scannedRepos;
 
     for (let i = 0; i < repos.length; i++) {
       const acc = repos[i].associatedAccount;
       if (acc) {
-        counts.set(acc, (counts.get(acc) || 0) + 1);
+        counts[acc] = (counts[acc] || 0) + 1;
+        const lower = acc.toLowerCase();
+        if (lower !== acc) {
+          counts[lower] = (counts[lower] || 0) + 1;
+        }
       } else {
         unassigned++;
       }
@@ -34,12 +38,6 @@
 
     return { counts, unassigned };
   })();
-
-  function getCountForAccount(acc: string): number {
-    return accountStats.counts.get(acc) || 0;
-  }
-
-  $: unassignedCount = accountStats.unassigned;
 
   // Single-pass O(N) calculation for status filter counts within the selected account scope
   $: statusCounts = (() => {
@@ -56,7 +54,7 @@
       const repo = repos[i];
       if (targetAccount !== 'ALL') {
         if (targetAccount === 'UNASSIGNED' && repo.associatedAccount) continue;
-        if (targetAccount !== 'UNASSIGNED' && repo.associatedAccount !== targetAccount) continue;
+        if (targetAccount !== 'UNASSIGNED' && repo.associatedAccount?.toLowerCase() !== targetAccount.toLowerCase()) continue;
       }
 
       all++;
@@ -113,7 +111,7 @@
 
 <div class="flex flex-col border-b border-neutral-800/80 bg-neutral-950/70 select-none">
   <!-- Top Row: GitHub Account Pills (if accounts exist) -->
-  {#if accounts.length > 0 || unassignedCount > 0}
+  {#if accounts.length > 0 || accountStats.unassigned > 0}
     <div class="px-3 py-1.5 border-b border-neutral-850/60 flex items-center gap-1.5 overflow-x-auto text-[11px] no-scrollbar">
       <!-- All Repositories Pill -->
       <button
@@ -133,7 +131,6 @@
 
       <!-- Account Specific Pills -->
       {#each accounts as acc (acc)}
-        {@const count = getCountForAccount(acc)}
         <button
           type="button"
           on:click={() => selectedAccountFilter.set(acc)}
@@ -145,13 +142,13 @@
           <Github size={11} class={$selectedAccountFilter === acc ? 'text-indigo-400' : 'text-neutral-500'} />
           <span class="font-mono text-[10px]">@{acc}</span>
           <span class="px-1.5 py-0.2 rounded-full bg-neutral-900/80 text-[10px] font-mono {$selectedAccountFilter === acc ? 'text-indigo-300' : 'text-neutral-500'}">
-            {count}
+            {accountStats.counts[acc] ?? accountStats.counts[acc.toLowerCase()] ?? 0}
           </span>
         </button>
       {/each}
 
       <!-- Unassigned Pill -->
-      {#if unassignedCount > 0 && accounts.length > 0}
+      {#if accountStats.unassigned > 0 && accounts.length > 0}
         <button
           type="button"
           on:click={() => selectedAccountFilter.set('UNASSIGNED')}
@@ -162,7 +159,7 @@
         >
           <span>Unassigned</span>
           <span class="px-1.5 py-0.2 rounded-full bg-neutral-900 text-[10px] font-mono text-neutral-500">
-            {unassignedCount}
+            {accountStats.unassigned}
           </span>
         </button>
       {/if}

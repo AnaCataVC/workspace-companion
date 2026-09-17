@@ -22,7 +22,7 @@ export const filteredRepos = derived(
         if ($account === 'UNASSIGNED') {
           if (repo.associatedAccount) return false;
         } else if ($account !== 'ALL') {
-          if (repo.associatedAccount !== $account) return false;
+          if (repo.associatedAccount?.toLowerCase() !== $account.toLowerCase()) return false;
         }
 
         // Multi-WT is a repository-level property, so it filters whole repos out.
