@@ -12,12 +12,16 @@
     Terminal,
     ChevronDown,
     Bot,
-    Anchor
+    Anchor,
+    GitMerge,
+    GitPullRequestClosed
   } from 'lucide-svelte';
   import { batchSelection, selectedPaths } from '../stores/batchSelection';
+  import { highlightedWorktreePath } from '../stores/worktrees';
   import { appConfig } from '../stores/appConfig';
   import { createEventDispatcher } from 'svelte';
   import DirtyDiffPopover from './DirtyDiffPopover.svelte';
+  import { worktreeProtectionReason } from '../utils/protectionReason';
 
   export let worktree: WorktreeInfo;
   export let repoPath: string = '';
@@ -37,8 +41,18 @@
   $: showTerminalBtn = ($appConfig.showTerminalButton !== false) && preferredTerminal !== 'none';
 
   let isHovered = false;
+  let rootEl: HTMLDivElement;
 
+  let highlightTimer: ReturnType<typeof setTimeout> | null = null;
   $: isSelected = $selectedPaths.has(worktree.path);
+  $: isHighlighted = $highlightedWorktreePath === worktree.path;
+  $: if (isHighlighted && rootEl) {
+    rootEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (highlightTimer) clearTimeout(highlightTimer);
+    highlightTimer = setTimeout(() => {
+      highlightedWorktreePath.set(null);
+    }, 2500);
+  }
 
   function toggleSelection() {
     if (worktree.isMain) return;
@@ -66,8 +80,10 @@
 </script>
 
 <div
+  bind:this={rootEl}
   role="group"
   class="group relative flex items-center justify-between px-2.5 py-1.5 rounded-md border transition-all text-xs
+    {isHighlighted ? 'ring-2 ring-indigo-500/70' : ''}
     {isSelected
       ? 'bg-rose-950/30 border-rose-800/60 shadow-xs'
       : worktree.isMain
@@ -101,7 +117,7 @@
         class="w-3.5 h-3.5 rounded border-neutral-700 bg-neutral-950 text-rose-500 focus:ring-rose-500/30 focus:ring-offset-0 cursor-pointer flex-shrink-0"
       />
     {:else}
-      <span title="Main / Root Worktree is protected from batch deletion" class="w-3.5 h-3.5 flex items-center justify-center text-neutral-600 flex-shrink-0">
+      <span title={worktreeProtectionReason(worktree)} class="w-3.5 h-3.5 flex items-center justify-center text-neutral-600 flex-shrink-0">
         <Lock size={10} />
       </span>
     {/if}
@@ -146,7 +162,28 @@
         />
       {/if}
 
-      {#if worktree.isOrphaned}
+      <!-- Named reason first, generic "Orphan" only when neither branch flag explains it. -->
+      {#if worktree.isBranchMerged}
+        <span
+          class="px-1.5 py-0.5 rounded bg-emerald-950/70 text-emerald-300 border border-emerald-800/50 text-[9px] font-sans flex items-center gap-0.5"
+          title={worktree.orphanReason || 'Branch merged into the default branch'}
+        >
+          <GitMerge size={9} />
+          Merged
+        </span>
+      {/if}
+
+      {#if worktree.isBranchRemoteGone}
+        <span
+          class="px-1.5 py-0.5 rounded bg-amber-950/70 text-amber-300 border border-amber-800/50 text-[9px] font-sans flex items-center gap-0.5"
+          title={worktree.orphanReason || 'Upstream remote branch was deleted'}
+        >
+          <GitPullRequestClosed size={9} />
+          Remote gone
+        </span>
+      {/if}
+
+      {#if worktree.isOrphaned && !worktree.isBranchMerged && !worktree.isBranchRemoteGone}
         <span
           class="px-1.5 py-0.5 rounded bg-amber-950/70 text-amber-300 border border-amber-800/50 text-[9px] font-sans flex items-center gap-0.5"
           title={worktree.orphanReason || 'Orphaned worktree'}
@@ -220,15 +257,17 @@
       <Folder size={12} />
     </button>
 
-    <!-- 1-Click Remove / Clean (hidden for main anchor) -->
+    <!-- 1-Click Remove / Clean (hidden for main anchor). Deliberately larger than its siblings
+         and behind a persistent divider so the destructive action never reads as part of the
+         safe launcher cluster, even when the row isn't hovered. -->
     {#if !worktree.isMain}
       <button
         type="button"
         on:click={() => dispatch('requestDelete', worktree)}
         title="Remove worktree"
-        class="p-1 rounded hover:bg-rose-950/80 text-neutral-500 hover:text-rose-400 border border-transparent hover:border-rose-900/50 transition-colors"
+        class="p-1.5 pl-2 ml-1 border-l border-neutral-800/60 rounded hover:bg-rose-950/80 text-neutral-500 hover:text-rose-400 transition-colors"
       >
-        <Trash2 size={12} />
+        <Trash2 size={14} />
       </button>
     {/if}
   </div>

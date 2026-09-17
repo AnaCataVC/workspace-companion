@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { scannedRepos, searchFilter } from '../stores/worktrees';
+  import { filteredRepos, searchFilter } from '../stores/worktrees';
   import { appConfig, selectedAccountFilter, selectedStatusFilter, viewDensity } from '../stores/appConfig';
   import { activeGhAccount } from '../stores/ghAuth';
   import { batchSelection, selectedPaths } from '../stores/batchSelection';
   import WorktreeCard from './WorktreeCard.svelte';
   import WorktreeItemRow from './WorktreeItemRow.svelte';
   import QuickWorktreeInline from './QuickWorktreeInline.svelte';
-  import type { RepositoryWorktrees, WorktreeInfo, SupportedEditor, SupportedTerminal, BatchDeleteTarget } from '../types';
+  import type { RepositoryWorktrees, WorktreeInfo, SupportedEditor, SupportedTerminal } from '../types';
   import { FolderGit2, Sparkles, Inbox, Github, Zap, Settings2, CheckSquare, Square } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
 
@@ -22,50 +22,6 @@
     openSettings: void;
     worktreeCreated: { repoPath: string; worktreeInfo?: import('../types').WorktreeInfo };
   }>();
-
-  // High-performance single-pass combined filter
-  $: filteredRepos = $scannedRepos
-    .filter(repo => {
-      // 1. Account filter
-      if ($selectedAccountFilter === 'UNASSIGNED') {
-        if (repo.associatedAccount) return false;
-      } else if ($selectedAccountFilter !== 'ALL') {
-        if (repo.associatedAccount !== $selectedAccountFilter) return false;
-      }
-
-      // 2. Multi-WT filter at repository level
-      if ($selectedStatusFilter === 'MULTI_WT' && repo.worktrees.length <= 1) {
-        return false;
-      }
-
-      return true;
-    })
-    .map(repo => {
-      const q = $searchFilter.toLowerCase().trim();
-      const status = $selectedStatusFilter;
-
-      // Filter worktrees inside the repository based on status and search query
-      const matchedWorktrees = repo.worktrees.filter(wt => {
-        // Status filter for worktrees
-        if (status === 'DIRTY' && !wt.isDirty) return false;
-        if (status === 'ORPHANS' && (wt.isMain || !wt.isOrphaned)) return false;
-        if (status === 'CLEAN' && wt.isDirty) return false;
-
-        // Text query search
-        if (!q) return true;
-        return (
-          (wt.branch && wt.branch.toLowerCase().includes(q)) ||
-          wt.path.toLowerCase().includes(q) ||
-          (wt.lastCommitMessage && wt.lastCommitMessage.toLowerCase().includes(q))
-        );
-      });
-
-      return {
-        ...repo,
-        worktrees: matchedWorktrees
-      };
-    })
-    .filter(repo => repo.worktrees.length > 0);
 
   function getAnchorBranchName(repo: RepositoryWorktrees): string {
     const main = repo.worktrees.find(w => w.isMain);
@@ -105,7 +61,7 @@
 </script>
 
 <div class="flex-1 overflow-y-auto p-3 space-y-3 custom-scroll">
-  {#if filteredRepos.length === 0}
+  {#if $filteredRepos.length === 0}
     <div class="flex flex-col items-center justify-center h-48 text-neutral-500 gap-2 select-none">
       {#if $searchFilter || $selectedStatusFilter !== 'ALL' || $selectedAccountFilter !== 'ALL'}
         <p class="text-xs">No repositories match your active filter criteria.</p>
@@ -141,7 +97,7 @@
       {/if}
     </div>
   {:else}
-    {#each filteredRepos as repo (repo.repoPath)}
+    {#each $filteredRepos as repo (repo.repoPath)}
       {@const orphanCount = repo.worktrees.filter(w => !w.isMain && w.isOrphaned).length}
       {@const isDifferentAccount = repo.associatedAccount && $activeGhAccount && repo.associatedAccount !== $activeGhAccount}
       {@const anchorBranch = getAnchorBranchName(repo)}

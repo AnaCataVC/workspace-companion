@@ -3,7 +3,7 @@
   import Header from './lib/components/Header.svelte';
   import AccountFilterBar from './lib/components/AccountFilterBar.svelte';
   import WorktreeList from './lib/components/WorktreeList.svelte';
-  import OrphanCleanerModal from './lib/components/OrphanCleanerModal.svelte';
+  import RemoveWorktreeModal from './lib/components/RemoveWorktreeModal.svelte';
   import GhAccountModal from './lib/components/GhAccountModal.svelte';
   import BranchSwitcherModal from './lib/components/BranchSwitcherModal.svelte';
   import NewWorktreeModal from './lib/components/NewWorktreeModal.svelte';
@@ -15,10 +15,10 @@
   import BranchActionBar from './lib/components/BranchActionBar.svelte';
   import BranchBatchDeleteModal from './lib/components/BranchBatchDeleteModal.svelte';
   import ToastContainer from './lib/components/ToastContainer.svelte';
-  import { scannedRepos, isScanning, isPinned, scanError } from './lib/stores/worktrees';
+  import { scannedRepos, isScanning, isPinned, scanError, highlightedWorktreePath, searchFilter } from './lib/stores/worktrees';
   import { scannedBranches, isScanningBranches, branchScanError } from './lib/stores/branchCleaner';
   import { ghAccounts, activeGhAccount, isGhLoading } from './lib/stores/ghAuth';
-  import { appConfig, selectedAccountFilter } from './lib/stores/appConfig';
+  import { appConfig, selectedAccountFilter, selectedStatusFilter } from './lib/stores/appConfig';
   import { batchSelection, selectedWorktreeList } from './lib/stores/batchSelection';
   import { branchSelection, selectedBranchList } from './lib/stores/branchSelection';
   import { installedEditors } from './lib/stores/editors';
@@ -83,6 +83,7 @@
   // New worktree modal state
   let isNewWorktreeOpen: boolean = false;
   let initialRepoForNewWorktree: string = '';
+  let initialExistingBranchForNewWorktree: string = '';
   let isCreatingWorktree: boolean = false;
   let newWorktreeError: string | null = null;
 
@@ -382,6 +383,7 @@
   // New Worktree Modal handlers
   function handleOpenNewWorktree(repoPath?: string) {
     initialRepoForNewWorktree = repoPath || ($scannedRepos[0]?.repoPath || '');
+    initialExistingBranchForNewWorktree = '';
     newWorktreeError = null;
     isNewWorktreeOpen = true;
   }
@@ -512,11 +514,13 @@
         batchSelection.prune(remainingPaths);
       }
 
-      // If all requested were deleted with zero errors, close modal and clear selection
-      if (summary && summary.errors.length === 0 && summary.skippedCount === 0) {
+      // A skipped target is a protection doing its job, not an outcome the user has to review
+      // in the modal — only a genuine failure keeps the summary phase open.
+      if (summary && !summary.errors.some((e) => e.kind === 'failed')) {
         batchSelection.clear();
         isBatchDeleteModalOpen = false;
-        notifications.success('Worktrees removed', `Successfully removed ${summary.deletedCount} worktree(s).`);
+        const skippedNote = summary.skippedCount > 0 ? ` ${summary.skippedCount} protected worktree(s) skipped.` : '';
+        notifications.success('Worktrees removed', `Successfully removed ${summary.deletedCount} worktree(s).${skippedNote}`);
       }
     } catch (err: any) {
       batchDeleteError = err?.message || err?.toString() || 'Failed to remove worktrees';
@@ -588,11 +592,34 @@
     }
   }
 
-  function handleToggleView() {
-    activeView = activeView === 'worktrees' ? 'branches' : 'worktrees';
+  function handleSetView(view: 'worktrees' | 'branches') {
+    if (activeView === view) return;
+    highlightedWorktreePath.set(null);
+    activeView = view;
     if (activeView === 'branches') {
       refreshBranches();
     }
+  }
+
+  function handleRequestCheckoutBranch(event: CustomEvent<BranchStatusEntry>) {
+    const branch = event.detail;
+
+    // The branch is already checked out somewhere: there is nothing to check out, so the useful
+    // action is taking the user to that worktree instead of creating a second one.
+    // Reset filters and query so the target worktree is guaranteed to be rendered in the view.
+    if (branch.checkedOutWorktreePath) {
+      searchFilter.set('');
+      selectedStatusFilter.set('ALL');
+      selectedAccountFilter.set('ALL');
+      highlightedWorktreePath.set(branch.checkedOutWorktreePath);
+      activeView = 'worktrees';
+      return;
+    }
+
+    initialRepoForNewWorktree = branch.repoPath;
+    initialExistingBranchForNewWorktree = branch.name;
+    newWorktreeError = null;
+    isNewWorktreeOpen = true;
   }
 
   function handleOpenBranchBatchDeleteModal() {
@@ -623,10 +650,11 @@
       const remainingKeys = new Set($scannedBranches.map((b) => `${b.repoPath}::${b.name}`));
       branchSelection.prune(remainingKeys);
 
-      if (summary && summary.errors.length === 0 && summary.skippedCount === 0) {
+      if (summary && !summary.errors.some((e) => e.kind === 'failed')) {
         branchSelection.clear();
         isBranchBatchDeleteModalOpen = false;
-        notifications.success('Branches deleted', `Successfully deleted ${summary.deletedCount} branch(es).`);
+        const skippedNote = summary.skippedCount > 0 ? ` ${summary.skippedCount} protected branch(es) skipped.` : '';
+        notifications.success('Branches deleted', `Successfully deleted ${summary.deletedCount} branch(es).${skippedNote}`);
       }
     } catch (err: any) {
       branchBatchDeleteError = err?.message || err?.toString() || 'Failed to delete branches';
@@ -701,7 +729,7 @@
     {activeView}
     isRefreshing={activeView === 'worktrees' ? $isScanning : $isScanningBranches}
     onRefresh={activeView === 'worktrees' ? refreshWorktrees : () => refreshBranches()}
-    onToggleView={handleToggleView}
+    onSetView={handleSetView}
     onOpenGhModal={() => (isGhModalOpen = true)}
     onOpenNewWorktreeModal={() => handleOpenNewWorktree()}
     onOpenSettingsModal={() => (isSettingsModalOpen = true)}
@@ -745,7 +773,7 @@
   {:else}
     <BranchFilterBar />
 
-    <BranchList />
+    <BranchList on:requestCheckout={handleRequestCheckoutBranch} />
 
     <!-- Floating Branch Batch Action Bar -->
     <BranchActionBar on:openBatchDeleteModal={handleOpenBranchBatchDeleteModal} />
@@ -787,6 +815,7 @@
     isOpen={isNewWorktreeOpen}
     repositories={$scannedRepos}
     initialRepoPath={initialRepoForNewWorktree}
+    initialExistingBranch={initialExistingBranchForNewWorktree}
     isCreating={isCreatingWorktree}
     errorMessage={newWorktreeError}
     onSuggestPath={handleSuggestPath}
@@ -795,7 +824,7 @@
     on:create={handleConfirmCreateWorktree}
   />
 
-  <OrphanCleanerModal
+  <RemoveWorktreeModal
     isOpen={isDeleteModalOpen}
     worktree={selectedWorktreeForDelete}
     repoPath={selectedRepoPathForDelete}

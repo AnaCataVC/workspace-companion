@@ -16,6 +16,8 @@
   export let isOpen: boolean = false;
   export let repositories: RepositoryWorktrees[] = [];
   export let initialRepoPath: string = '';
+  /** Opens straight into "existing branch" mode on this branch, for checkout from the Branches view. */
+  export let initialExistingBranch: string = '';
   export let isCreating: boolean = false;
   export let errorMessage: string | null = null;
   export let onSuggestPath: ((repoPath: string, branchName: string) => Promise<{ suggestedPath: string; alreadyExists: boolean }>) | null = null;
@@ -48,6 +50,25 @@
     }
   }
 
+  let appliedPresetBranch: string = '';
+  let lastIsOpen: boolean = false;
+  $: if (isOpen && !lastIsOpen) {
+    lastIsOpen = true;
+    if (initialExistingBranch) {
+      appliedPresetBranch = initialExistingBranch;
+      selectedRepoPath = initialRepoPath || selectedRepoPath;
+      mode = 'existing';
+      existingBranch = initialExistingBranch;
+    } else {
+      mode = 'new';
+      appliedPresetBranch = '';
+    }
+  }
+  $: if (!isOpen) {
+    lastIsOpen = false;
+    appliedPresetBranch = '';
+  }
+
   $: if (selectedRepoPath) {
     loadBranchesForRepo(selectedRepoPath);
   }
@@ -65,8 +86,11 @@
         baseBranch = branches[0].shortName;
       }
       
+      // Only auto-pick when the current choice isn't offered by this repo — otherwise a branch
+      // the caller preselected (checkout from the Branches view) would be silently replaced.
       const unassigned = branches.filter(b => !b.isLockedByOther && !b.isCurrent);
-      if (unassigned.length > 0) {
+      const currentChoiceStillOffered = unassigned.some(b => b.shortName === existingBranch);
+      if (!currentChoiceStillOffered && unassigned.length > 0) {
         existingBranch = unassigned[0].shortName;
       }
     } catch (e) {

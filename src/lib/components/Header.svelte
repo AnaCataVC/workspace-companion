@@ -2,12 +2,12 @@
   import { isPinned, searchFilter } from '../stores/worktrees';
   import { activeGhAccount } from '../stores/ghAuth';
   import { viewDensity } from '../stores/appConfig';
-  import { RefreshCw, Pin, PinOff, Github, Search, Plus, Settings2, LayoutList, LayoutGrid, GitBranch } from 'lucide-svelte';
+  import { RefreshCw, Pin, PinOff, Github, Search, Plus, Settings2, LayoutList, LayoutGrid, GitBranch, FolderTree } from 'lucide-svelte';
 
   export let activeView: 'worktrees' | 'branches' = 'worktrees';
   export let isRefreshing: boolean = false;
   export let onRefresh: () => void;
-  export let onToggleView: () => void;
+  export let onSetView: (view: 'worktrees' | 'branches') => void;
   export let onOpenGhModal: () => void;
   export let onOpenNewWorktreeModal: () => void;
   export let onOpenSettingsModal: () => void;
@@ -57,18 +57,36 @@
         </button>
       {/if}
 
-      <!-- Branch Cleaner View Toggle -->
-      <button
-        on:click={onToggleView}
-        title={activeView === 'worktrees' ? 'Open Branch Cleaner' : 'Back to Worktrees'}
-        class="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition-colors border
-          {activeView === 'branches'
-            ? 'bg-indigo-950/80 border-indigo-700/60 text-indigo-200'
-            : 'bg-neutral-800/80 hover:bg-neutral-700 border-neutral-700/50 text-neutral-300'}"
-      >
-        <GitBranch size={13} />
-        <span>{activeView === 'worktrees' ? 'Branches' : 'Worktrees'}</span>
-      </button>
+      <!-- Segmented view switch: each half is its own target, so the label always names the view
+           it takes you to instead of flipping meaning with the current state. -->
+      <div class="flex items-center rounded-md bg-neutral-900 border border-neutral-800 p-0.5 gap-0.5">
+        <button
+          type="button"
+          on:click={() => onSetView('worktrees')}
+          title="Show worktrees"
+          aria-pressed={activeView === 'worktrees'}
+          class="flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded transition-colors
+            {activeView === 'worktrees'
+              ? 'bg-indigo-600 text-white'
+              : 'text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'}"
+        >
+          <FolderTree size={13} />
+          <span>Worktrees</span>
+        </button>
+        <button
+          type="button"
+          on:click={() => onSetView('branches')}
+          title="Show branches"
+          aria-pressed={activeView === 'branches'}
+          class="flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded transition-colors
+            {activeView === 'branches'
+              ? 'bg-indigo-600 text-white'
+              : 'text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'}"
+        >
+          <GitBranch size={13} />
+          <span>Branches</span>
+        </button>
+      </div>
 
       <!-- GitHub Account Badge Button -->
       <button

@@ -1,24 +1,23 @@
 <script lang="ts">
-  import { scannedBranches, selectedBranchStatusFilter, isScanningBranches, branchScanError } from '../stores/branchCleaner';
+  import { filteredBranches, isScanningBranches, branchScanError, scannedBranches } from '../stores/branchCleaner';
   import { scannedRepos } from '../stores/worktrees';
+  import { viewDensity } from '../stores/appConfig';
   import { branchSelection, selectedBranchKeys, branchSelectionKey } from '../stores/branchSelection';
   import BranchItemRow from './BranchItemRow.svelte';
+  import BranchCard from './BranchCard.svelte';
   import type { BranchStatusEntry } from '../types';
   import { FolderGit2, CheckSquare, Square, Inbox } from 'lucide-svelte';
+  import { createEventDispatcher } from 'svelte';
+
+  const dispatch = createEventDispatcher<{
+    requestCheckout: BranchStatusEntry;
+  }>();
 
   $: repoNameByPath = new Map($scannedRepos.map((r) => [r.repoPath, r.repoName]));
 
-  $: filteredByStatus = $scannedBranches.filter((b) => {
-    const filter = $selectedBranchStatusFilter;
-    if (filter === 'MERGED') return b.isMerged;
-    if (filter === 'REMOTE_GONE') return b.isRemoteGone;
-    if (filter === 'PROTECTED') return b.isDefault || b.isCheckedOut;
-    return true;
-  });
-
   $: groupedByRepo = (() => {
     const groups = new Map<string, BranchStatusEntry[]>();
-    for (const b of filteredByStatus) {
+    for (const b of $filteredBranches) {
       const list = groups.get(b.repoPath) || [];
       list.push(b);
       groups.set(b.repoPath, list);
@@ -107,11 +106,28 @@
           {/if}
         </div>
 
-        <div class="flex flex-col gap-1">
-          {#each branches as branch (branch.name)}
-            <BranchItemRow {branch} repoName={repoName} />
-          {/each}
-        </div>
+        <!-- Branch Presentation (Compact Rows vs Detailed Cards), same density switch as WorktreeList -->
+        {#if $viewDensity === 'compact'}
+          <div class="flex flex-col gap-1">
+            {#each branches as branch (branch.name)}
+              <BranchItemRow
+                {branch}
+                repoName={repoName}
+                on:requestCheckout={(e) => dispatch('requestCheckout', e.detail)}
+              />
+            {/each}
+          </div>
+        {:else}
+          <div class="grid grid-cols-1 gap-2">
+            {#each branches as branch (branch.name)}
+              <BranchCard
+                {branch}
+                repoName={repoName}
+                on:requestCheckout={(e) => dispatch('requestCheckout', e.detail)}
+              />
+            {/each}
+          </div>
+        {/if}
       </div>
     {/each}
   {/if}

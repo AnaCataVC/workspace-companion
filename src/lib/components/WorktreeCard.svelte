@@ -11,13 +11,17 @@
     Compass,
     Terminal,
     ChevronDown,
-    Bot
+    Bot,
+    GitMerge,
+    GitPullRequestClosed
   } from 'lucide-svelte';
   import { installedEditors } from '../stores/editors';
   import { batchSelection, selectedPaths } from '../stores/batchSelection';
+  import { highlightedWorktreePath } from '../stores/worktrees';
   import { appConfig } from '../stores/appConfig';
   import { createEventDispatcher } from 'svelte';
   import DirtyDiffPopover from './DirtyDiffPopover.svelte';
+  import { worktreeProtectionReason } from '../utils/protectionReason';
 
   export let worktree: WorktreeInfo;
   export let repoPath: string = '';
@@ -32,11 +36,21 @@
   }>();
 
   let isEditorMenuOpen = false;
+  let rootEl: HTMLDivElement;
 
   $: preferredEditor = ($appConfig.defaultEditor as SupportedEditor) || 'vscode';
   $: preferredTerminal = ($appConfig.defaultTerminal as SupportedTerminal) || 'wt';
   $: showTerminalBtn = ($appConfig.showTerminalButton !== false) && preferredTerminal !== 'none';
+  let highlightTimer: ReturnType<typeof setTimeout> | null = null;
   $: isSelected = $selectedPaths.has(worktree.path);
+  $: isHighlighted = $highlightedWorktreePath === worktree.path;
+  $: if (isHighlighted && rootEl) {
+    rootEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (highlightTimer) clearTimeout(highlightTimer);
+    highlightTimer = setTimeout(() => {
+      highlightedWorktreePath.set(null);
+    }, 2500);
+  }
 
   function toggleSelection() {
     if (worktree.isMain) return;
@@ -73,7 +87,10 @@
   }
 </script>
 
-<div class="group relative rounded-lg border p-2.5 transition-all text-xs flex flex-col gap-1.5 shadow-sm
+<div
+  bind:this={rootEl}
+  class="group relative rounded-lg border p-2.5 transition-all text-xs flex flex-col gap-1.5 shadow-sm
+  {isHighlighted ? 'ring-2 ring-indigo-500/70' : ''}
   {isSelected
     ? 'bg-rose-950/30 border-rose-800/70 shadow-xs'
     : 'bg-neutral-900/90 hover:bg-neutral-850 border-neutral-800/80 hover:border-neutral-700'}">
@@ -89,7 +106,7 @@
           class="w-3.5 h-3.5 rounded border-neutral-700 bg-neutral-950 text-rose-500 focus:ring-rose-500/30 focus:ring-offset-0 cursor-pointer flex-shrink-0"
         />
       {:else}
-        <span title="Main / Root Worktree is protected from batch deletion" class="w-3.5 h-3.5 flex items-center justify-center text-neutral-600 flex-shrink-0">
+        <span title={worktreeProtectionReason(worktree)} class="w-3.5 h-3.5 flex items-center justify-center text-neutral-600 flex-shrink-0">
           <Lock size={10} />
         </span>
       {/if}
@@ -116,8 +133,32 @@
 
     <!-- Status Badges -->
     <div class="flex items-center gap-1">
-      {#if worktree.isOrphaned}
-        <span class="px-1.5 py-0.5 rounded bg-amber-950/70 text-amber-300 border border-amber-800/50 text-[10px] flex items-center gap-0.5 font-sans">
+      <!-- Named reason first, generic "Orphan" only when neither branch flag explains it. -->
+      {#if worktree.isBranchMerged}
+        <span
+          class="px-1.5 py-0.5 rounded bg-emerald-950/70 text-emerald-300 border border-emerald-800/50 text-[10px] flex items-center gap-0.5 font-sans"
+          title={worktree.orphanReason || 'Branch merged into the default branch'}
+        >
+          <GitMerge size={10} />
+          Merged
+        </span>
+      {/if}
+
+      {#if worktree.isBranchRemoteGone}
+        <span
+          class="px-1.5 py-0.5 rounded bg-amber-950/70 text-amber-300 border border-amber-800/50 text-[10px] flex items-center gap-0.5 font-sans"
+          title={worktree.orphanReason || 'Upstream remote branch was deleted'}
+        >
+          <GitPullRequestClosed size={10} />
+          Remote gone
+        </span>
+      {/if}
+
+      {#if worktree.isOrphaned && !worktree.isBranchMerged && !worktree.isBranchRemoteGone}
+        <span
+          class="px-1.5 py-0.5 rounded bg-amber-950/70 text-amber-300 border border-amber-800/50 text-[10px] flex items-center gap-0.5 font-sans"
+          title={worktree.orphanReason || 'Orphaned worktree'}
+        >
           <AlertTriangle size={10} />
           Orphan
         </span>
@@ -271,14 +312,15 @@
       <Folder size={12} />
     </button>
 
-    <!-- Delete Worktree button -->
+    <!-- Delete Worktree button. Deliberately larger than its siblings and behind a persistent
+         divider so the destructive action never reads as part of the safe launcher cluster. -->
     <button
       type="button"
       on:click={() => dispatch('requestDelete', worktree)}
       title="Remove worktree"
-      class="p-1.5 rounded hover:bg-rose-950/60 text-neutral-400 hover:text-rose-400 border border-transparent hover:border-rose-900/50 transition-colors"
+      class="p-2 pl-2.5 ml-1 border-l border-neutral-800/60 rounded hover:bg-rose-950/60 text-neutral-400 hover:text-rose-400 transition-colors"
     >
-      <Trash2 size={12} />
+      <Trash2 size={14} />
     </button>
   </div>
 </div>

@@ -3,6 +3,8 @@
   import { Trash2, X, ShieldAlert, CheckCircle2, Flame, GitBranch } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
   import { closeOnEscape } from '../actions/closeOnEscape';
+  import { forceBatchWorktreeDelete } from '../stores/forceDeleteIntent';
+  import { worktreeProtectionReason } from '../utils/protectionReason';
 
   export let isOpen: boolean = false;
   export let targets: BatchDeleteTarget[] = [];
@@ -15,30 +17,54 @@
     confirmDelete: { targets: BatchDeleteTarget[]; force: boolean };
   }>();
 
-  let forceDelete: boolean = false;
+  /**
+   * Typed against a fixed literal rather than each worktree's branch name: a batch confirms N
+   * differently-named targets at once, so one keyword is both simpler and easier to recognise as
+   * "this is the irreversible one".
+   */
+  const FORCE_KEYWORD = 'FORCE';
+
+  let forceConfirmText: string = '';
+  let lastTargetsKey: string = '';
 
   $: hasDirty = targets.some((t) => Boolean(t.isDirty));
-  $: dirtyCount = targets.filter((t) => Boolean(t.isDirty)).length;
+  $: dirtyTargets = targets.filter((t) => Boolean(t.isDirty));
+  $: dirtyCount = dirtyTargets.length;
   // Mirrors the backend's skip-dirty-unless-forced rule (see worktree_cleaner.rs) so the button
   // label reflects what will actually happen before the click, not just an intent to delete
-  $: willDeleteCount = forceDelete ? targets.length : targets.length - dirtyCount;
+  $: willDeleteCount = $forceBatchWorktreeDelete ? targets.length : targets.length - dirtyCount;
   $: skippedCount = targets.length - willDeleteCount;
+
+  // Resets on a change of selection, not on close: reopening the dialog over the same selection
+  // keeps the intent the user already expressed.
+  $: targetsKey = targets.map((t) => t.worktreePath).sort().join('|');
+  $: if (targetsKey !== lastTargetsKey) {
+    lastTargetsKey = targetsKey;
+    forceBatchWorktreeDelete.set(false);
+    forceConfirmText = '';
+  }
+
+  $: if (!$forceBatchWorktreeDelete) {
+    forceConfirmText = '';
+  }
+
+  $: isForceConfirmed = forceConfirmText.trim().toUpperCase() === FORCE_KEYWORD;
 
   function close() {
     if (isDeleting) return;
-    forceDelete = false;
     dispatch('close');
   }
 
   function handleConfirm() {
     if (targets.length === 0) return;
+    const force = $forceBatchWorktreeDelete;
     const finalTargets = targets.map((t) => ({
       ...t,
-      force: forceDelete
+      force
     }));
     dispatch('confirmDelete', {
       targets: finalTargets,
-      force: forceDelete
+      force
     });
   }
 
@@ -91,9 +117,17 @@
             <div class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
               <span class="text-[10px] uppercase font-semibold text-rose-400">Reported issues:</span>
               {#each summary.errors as err}
-                <div class="p-2 rounded bg-rose-950/50 border border-rose-900/40 text-[10px] text-rose-200 font-mono">
-                  <p class="font-semibold break-all">{err.worktreePath}</p>
-                  <p class="text-rose-300/80">{err.error}</p>
+                <div
+                  class="p-2 rounded border text-[10px] font-mono
+                    {err.kind === 'skipped'
+                      ? 'bg-amber-950/50 border-amber-900/40 text-amber-200'
+                      : 'bg-rose-950/50 border-rose-900/40 text-rose-200'}"
+                >
+                  <p class="font-semibold break-all">
+                    <span class="uppercase font-sans tracking-wider mr-1">{err.kind === 'skipped' ? 'Skipped' : 'Failed'}</span>
+                    {err.worktreePath}
+                  </p>
+                  <p class={err.kind === 'skipped' ? 'text-amber-300/80' : 'text-rose-300/80'}>{err.error}</p>
                 </div>
               {/each}
             </div>
@@ -134,7 +168,10 @@
 
                 <div class="flex items-center gap-1 flex-shrink-0">
                   {#if wt.isDirty}
-                    <span class="px-1.5 py-0.2 rounded bg-rose-950 text-rose-300 border border-rose-800 text-[9px] flex items-center gap-0.5">
+                    <span
+                      class="px-1.5 py-0.2 rounded bg-rose-950 text-rose-300 border border-rose-800 text-[9px] flex items-center gap-0.5"
+                      title={worktreeProtectionReason(wt)}
+                    >
                       <Flame size={9} class="text-rose-400" />
                       dirty
                     </span>
@@ -161,11 +198,40 @@
             <label class="flex items-center gap-2 text-xs text-neutral-300 cursor-pointer select-none px-1">
               <input
                 type="checkbox"
-                bind:checked={forceDelete}
+                bind:checked={$forceBatchWorktreeDelete}
                 class="w-3.5 h-3.5 rounded border-neutral-700 bg-neutral-950 text-rose-500 focus:ring-rose-500/30 cursor-pointer"
               />
               <span class="text-[11px] text-rose-300">Force delete dirty worktrees permanently</span>
             </label>
+
+            {#if $forceBatchWorktreeDelete}
+              <div class="p-2.5 rounded-lg bg-rose-950/70 border border-rose-700/70 flex flex-col gap-2">
+                <p class="text-[11px] font-semibold text-rose-100">This cannot be undone</p>
+                <div class="max-h-24 overflow-y-auto space-y-0.5 text-[10px] text-rose-200/90 font-mono no-scrollbar">
+                  {#each dirtyTargets as wt (wt.worktreePath)}
+                    <p class="break-all">{getShortBranch(wt.branch)} — {worktreeProtectionReason(wt)}</p>
+                  {/each}
+                </div>
+                <label for="batch-delete-force-confirm" class="text-[10px] text-rose-200">
+                  Type <span class="font-mono font-bold text-rose-100">{FORCE_KEYWORD}</span> to confirm
+                </label>
+                <input
+                  id="batch-delete-force-confirm"
+                  type="text"
+                  bind:value={forceConfirmText}
+                  on:keydown={(e) => {
+                    if (e.key === 'Enter' && isForceConfirmed && !isDeleting && willDeleteCount > 0) {
+                      e.preventDefault();
+                      handleConfirm();
+                    }
+                  }}
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder={FORCE_KEYWORD}
+                  class="w-full bg-neutral-950 border border-rose-800/70 rounded px-2 py-1 text-[11px] font-mono text-rose-100 placeholder-rose-900 focus:outline-hidden focus:border-rose-500 focus:ring-1 focus:ring-rose-500/40"
+                />
+              </div>
+            {/if}
           {/if}
 
           {#if errorMessage}
@@ -188,7 +254,7 @@
             <button
               type="button"
               on:click={handleConfirm}
-              disabled={isDeleting || willDeleteCount === 0}
+              disabled={isDeleting || willDeleteCount === 0 || ($forceBatchWorktreeDelete && !isForceConfirmed)}
               class="px-3.5 py-1.5 rounded-lg text-xs font-medium bg-rose-600 hover:bg-rose-500 disabled:opacity-40 disabled:hover:bg-rose-600 text-white transition-all flex items-center gap-1.5 shadow-lg shadow-rose-600/25"
             >
               {#if isDeleting}

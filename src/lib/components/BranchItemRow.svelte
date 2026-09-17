@@ -1,13 +1,21 @@
 <script lang="ts">
   import type { BranchStatusEntry } from '../types';
-  import { GitBranch, Lock, GitMerge, GitPullRequestClosed, ShieldCheck } from 'lucide-svelte';
+  import { GitBranch, Lock, FolderSymlink, GitBranchPlus } from 'lucide-svelte';
   import { branchSelection, selectedBranchKeys, branchSelectionKey } from '../stores/branchSelection';
+  import { branchProtectionReason } from '../utils/protectionReason';
+  import BranchStatusBadges from './BranchStatusBadges.svelte';
+  import { createEventDispatcher } from 'svelte';
 
   export let branch: BranchStatusEntry;
   export let repoName: string = '';
 
+  const dispatch = createEventDispatcher<{
+    requestCheckout: BranchStatusEntry;
+  }>();
+
   $: isProtected = branch.isDefault || branch.isCheckedOut;
   $: isSelected = $selectedBranchKeys.has(branchSelectionKey({ repoPath: branch.repoPath, branchName: branch.name }));
+  $: hasWorktree = Boolean(branch.checkedOutWorktreePath);
 
   function toggleSelection() {
     if (isProtected) return;
@@ -19,12 +27,6 @@
       isMerged: branch.isMerged,
       isRemoteGone: branch.isRemoteGone
     });
-  }
-
-  function protectionReason(b: BranchStatusEntry): string {
-    if (b.isDefault) return 'Default branch — never deletable';
-    if (b.isCheckedOut) return `Checked out at ${b.checkedOutWorktreePath || 'a worktree'}`;
-    return '';
   }
 </script>
 
@@ -47,7 +49,7 @@
         class="w-3.5 h-3.5 rounded border-neutral-700 bg-neutral-950 text-rose-500 focus:ring-rose-500/30 focus:ring-offset-0 cursor-pointer flex-shrink-0"
       />
     {:else}
-      <span title={protectionReason(branch)} class="w-3.5 h-3.5 flex items-center justify-center text-neutral-600 flex-shrink-0">
+      <span title={branchProtectionReason(branch)} class="w-3.5 h-3.5 flex items-center justify-center text-neutral-600 flex-shrink-0">
         <Lock size={10} />
       </span>
     {/if}
@@ -71,26 +73,21 @@
   </div>
 
   <div class="flex items-center gap-1 flex-shrink-0 ml-2">
-    {#if isProtected}
-      <span
-        class="px-1.5 py-0.5 rounded bg-indigo-950/70 text-indigo-300 border border-indigo-800/50 text-[9px] flex items-center gap-0.5"
-        title={protectionReason(branch)}
-      >
-        <ShieldCheck size={9} />
-        Protected
-      </span>
-    {/if}
-    {#if branch.isMerged}
-      <span class="px-1.5 py-0.5 rounded bg-emerald-950/70 text-emerald-300 border border-emerald-800/50 text-[9px] flex items-center gap-0.5">
-        <GitMerge size={9} />
-        Merged
-      </span>
-    {/if}
-    {#if branch.isRemoteGone}
-      <span class="px-1.5 py-0.5 rounded bg-amber-950/70 text-amber-300 border border-amber-800/50 text-[9px] flex items-center gap-0.5">
-        <GitPullRequestClosed size={9} />
-        Remote gone
-      </span>
-    {/if}
+    <BranchStatusBadges {branch} size="sm" />
+
+    <button
+      type="button"
+      on:click={() => dispatch('requestCheckout', branch)}
+      title={hasWorktree
+        ? `Go to the worktree at ${branch.checkedOutWorktreePath}`
+        : 'Create a worktree that checks out this branch'}
+      class="p-1 rounded hover:bg-indigo-950/80 text-neutral-500 hover:text-indigo-300 border border-transparent hover:border-indigo-900/50 transition-colors"
+    >
+      {#if hasWorktree}
+        <FolderSymlink size={12} />
+      {:else}
+        <GitBranchPlus size={12} />
+      {/if}
+    </button>
   </div>
 </div>

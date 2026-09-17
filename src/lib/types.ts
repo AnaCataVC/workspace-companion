@@ -20,9 +20,16 @@ export interface BatchDeleteTarget {
   repoName?: string;
 }
 
+/**
+ * `skipped` is a safety guard refusing a target on purpose; `failed` is the git call itself
+ * going wrong. Only `failed` means the batch needs the user's attention.
+ */
+export type BatchItemErrorKind = 'skipped' | 'failed';
+
 export interface BatchItemError {
   worktreePath: string;
   error: string;
+  kind: BatchItemErrorKind;
 }
 
 export interface BatchDeleteSummary {
@@ -43,6 +50,9 @@ export interface WorktreeInfo {
   isMain?: boolean;
   isOrphaned: boolean;
   orphanReason?: string;
+  /** Status of the checked-out branch, so a worktree row can name why it is disposable. */
+  isBranchMerged?: boolean;
+  isBranchRemoteGone?: boolean;
   isDirty?: boolean;
   uncommittedFilesCount?: number;
   lastCommitMessage?: string;
@@ -174,6 +184,7 @@ export interface BranchDeleteTarget {
 export interface BranchBatchItemError {
   branchName: string;
   error: string;
+  kind: BatchItemErrorKind;
 }
 
 /** Identifies a deleted branch by repo + name — a bare name is ambiguous when a batch spans repos. */

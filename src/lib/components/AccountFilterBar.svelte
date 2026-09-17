@@ -1,9 +1,10 @@
 <script lang="ts">
   import { selectedAccountFilter, selectedStatusFilter } from '../stores/appConfig';
-  import { scannedRepos } from '../stores/worktrees';
+  import { scannedRepos, filteredRepos } from '../stores/worktrees';
   import { ghAccounts } from '../stores/ghAuth';
-  import type { StatusFilterType } from '../types';
-  import { Github, Layers, Flame, GitFork, AlertTriangle, CheckCircle2 } from 'lucide-svelte';
+  import { batchSelection, selectedPaths } from '../stores/batchSelection';
+  import type { StatusFilterType, BatchDeleteTarget } from '../types';
+  import { Github, Layers, Flame, GitFork, AlertTriangle, CheckCircle2, CheckSquare, Square } from 'lucide-svelte';
 
   $: allCount = $scannedRepos.length;
 
@@ -82,6 +83,31 @@
 
   function setStatusFilter(filter: StatusFilterType) {
     selectedStatusFilter.set(filter);
+  }
+
+  // The main worktree is the one the backend refuses outright, so it's never a selectable target.
+  $: selectableTargets = $filteredRepos.flatMap<BatchDeleteTarget>((repo) =>
+    repo.worktrees
+      .filter((wt) => !wt.isMain)
+      .map((wt) => ({
+        repoPath: repo.repoPath,
+        repoName: repo.repoName,
+        worktreePath: wt.path,
+        force: false,
+        branch: wt.branch,
+        isDirty: wt.isDirty,
+        uncommittedFilesCount: wt.uncommittedFilesCount
+      }))
+  );
+
+  $: allFilteredSelected = selectableTargets.length > 0 && selectableTargets.every((t) => $selectedPaths.has(t.worktreePath));
+
+  function toggleSelectAllFiltered() {
+    if (allFilteredSelected) {
+      batchSelection.clear();
+    } else {
+      batchSelection.selectAll(selectableTargets);
+    }
   }
 </script>
 
@@ -227,5 +253,26 @@
         {statusCounts.clean}
       </span>
     </button>
+
+    <!-- Selects / deselects across every repo currently shown, not just one repo's block -->
+    {#if selectableTargets.length > 0}
+      <button
+        type="button"
+        on:click={toggleSelectAllFiltered}
+        title={allFilteredSelected ? 'Deselect all filtered worktrees' : 'Select every worktree matching the active filters, across all repositories'}
+        class="ml-auto flex items-center gap-1 px-2 py-0.5 rounded-md font-medium transition-colors flex-shrink-0
+          {allFilteredSelected
+            ? 'bg-rose-950/80 hover:bg-rose-900/80 text-rose-300 border border-rose-800/70'
+            : 'bg-neutral-850 hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 border border-neutral-750'}"
+      >
+        {#if allFilteredSelected}
+          <CheckSquare size={11} class="text-rose-400" />
+          <span>Deselect all ({selectableTargets.length})</span>
+        {:else}
+          <Square size={11} />
+          <span>Select all ({selectableTargets.length})</span>
+        {/if}
+      </button>
+    {/if}
   </div>
 </div>

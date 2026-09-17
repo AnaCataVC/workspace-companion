@@ -1,7 +1,9 @@
 <script lang="ts">
-  import { scannedBranches, selectedBranchStatusFilter } from '../stores/branchCleaner';
-  import type { BranchStatusFilterType } from '../types';
-  import { Layers, GitMerge, GitPullRequestClosed, ShieldCheck } from 'lucide-svelte';
+  import { scannedBranches, selectedBranchStatusFilter, filteredBranches } from '../stores/branchCleaner';
+  import { scannedRepos } from '../stores/worktrees';
+  import { branchSelection, selectedBranchKeys, branchSelectionKey } from '../stores/branchSelection';
+  import type { BranchStatusFilterType, BranchDeleteTarget } from '../types';
+  import { Layers, GitMerge, GitPullRequestClosed, ShieldCheck, CheckSquare, Square } from 'lucide-svelte';
 
   // Single-pass O(N) tally, same pattern as AccountFilterBar's statusCounts.
   $: statusCounts = (() => {
@@ -24,6 +26,31 @@
 
   function setFilter(filter: BranchStatusFilterType) {
     selectedBranchStatusFilter.set(filter);
+  }
+
+  $: repoNameByPath = new Map($scannedRepos.map((r) => [r.repoPath, r.repoName]));
+
+  // The default branch and any checked-out branch are refused outright by the backend, so they
+  // are never selectable targets (ADR 0006).
+  $: selectableTargets = $filteredBranches
+    .filter((b) => !b.isDefault && !b.isCheckedOut)
+    .map<BranchDeleteTarget>((b) => ({
+      repoPath: b.repoPath,
+      branchName: b.name,
+      force: false,
+      repoName: repoNameByPath.get(b.repoPath) || '',
+      isMerged: b.isMerged,
+      isRemoteGone: b.isRemoteGone
+    }));
+
+  $: allFilteredSelected = selectableTargets.length > 0 && selectableTargets.every((b) => $selectedBranchKeys.has(branchSelectionKey(b)));
+
+  function toggleSelectAllFiltered() {
+    if (allFilteredSelected) {
+      branchSelection.clear();
+    } else {
+      branchSelection.selectAll(selectableTargets);
+    }
   }
 </script>
 
@@ -90,4 +117,25 @@
       {statusCounts.protectedCount}
     </span>
   </button>
+
+  <!-- Selects / deselects across every repo currently shown, not just one repo's block -->
+  {#if selectableTargets.length > 0}
+    <button
+      type="button"
+      on:click={toggleSelectAllFiltered}
+      title={allFilteredSelected ? 'Deselect all filtered branches' : 'Select every deletable branch matching the active filter, across all repositories'}
+      class="ml-auto flex items-center gap-1 px-2 py-0.5 rounded-md font-medium transition-colors flex-shrink-0
+        {allFilteredSelected
+          ? 'bg-rose-950/80 hover:bg-rose-900/80 text-rose-300 border border-rose-800/70'
+          : 'bg-neutral-850 hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 border border-neutral-750'}"
+    >
+      {#if allFilteredSelected}
+        <CheckSquare size={11} class="text-rose-400" />
+        <span>Deselect all ({selectableTargets.length})</span>
+      {:else}
+        <Square size={11} />
+        <span>Select all ({selectableTargets.length})</span>
+      {/if}
+    </button>
+  {/if}
 </div>
