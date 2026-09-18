@@ -4,6 +4,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import type { CreateWorktreeResult, SuggestWorktreePathResult, SupportedEditor, WorktreeInfo } from '../types';
   import { appConfig } from '../stores/appConfig';
+  import { toErrorMessage } from '../utils/errors';
 
   export let repoPath: string;
   export let defaultBranch: string = 'main';
@@ -97,8 +98,8 @@
         branchInput = '';
         isExpanded = false;
       }
-    } catch (err: any) {
-      errorMessage = typeof err === 'string' ? err : err?.message || 'Failed to create worktree';
+    } catch (err: unknown) {
+      errorMessage = toErrorMessage(err, 'Failed to create worktree');
     } finally {
       isCreating = false;
     }

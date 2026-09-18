@@ -2,6 +2,7 @@
   import { Flame } from 'lucide-svelte';
   import type { WorktreeDiffSummary } from '../types';
   import { invoke } from '@tauri-apps/api/core';
+  import { toErrorMessage } from '../utils/errors';
 
   export let worktreePath: string;
   export let label: string;
@@ -14,6 +15,7 @@
   let showDiffPopover = false;
   let diffSummary: WorktreeDiffSummary | null = null;
   let isLoadingDiff = false;
+  let diffError: string | null = null;
   let diffFetchTimer: ReturnType<typeof setTimeout> | null = null;
 
   function handleMouseEnter() {
@@ -41,12 +43,13 @@
   async function fetchDiffSummary() {
     if (diffSummary || isLoadingDiff) return;
     isLoadingDiff = true;
+    diffError = null;
     try {
       diffSummary = await invoke<WorktreeDiffSummary>('get_worktree_diff_summary', {
         worktreePath
       });
-    } catch (err) {
-      console.error('Failed to load worktree diff summary:', err);
+    } catch (err: unknown) {
+      diffError = toErrorMessage(err, 'Failed to inspect diff');
     } finally {
       isLoadingDiff = false;
     }
@@ -82,6 +85,8 @@
             {/each}
           </div>
         {/if}
+      {:else if diffError}
+        <span class="text-rose-400 text-[10px]">{diffError}</span>
       {:else if !isLoadingDiff}
         <span class="text-neutral-400 text-[10px]">Hovered to inspect git diff</span>
       {/if}

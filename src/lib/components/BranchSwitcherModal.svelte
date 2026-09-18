@@ -18,6 +18,7 @@
   import { closeOnEscape } from '../actions/closeOnEscape';
   import { invoke } from '@tauri-apps/api/core';
   import { appConfig } from '../stores/appConfig';
+  import { toErrorMessage } from '../utils/errors';
 
   export let isOpen: boolean = false;
   export let worktree: WorktreeInfo | null = null;
@@ -43,14 +44,17 @@
   let actionStatusMessage: string | null = null;
   let isConfirmingDiscard = false;
   let discardCountdown = 5;
-  let discardTimer: any = null;
+  let discardTimer: ReturnType<typeof setInterval> | null = null;
 
   onDestroy(() => {
-    if (discardTimer) clearInterval(discardTimer);
+    if (discardTimer !== null) clearInterval(discardTimer);
   });
 
   $: if (!isOpen) {
-    if (discardTimer) clearInterval(discardTimer);
+    if (discardTimer !== null) {
+      clearInterval(discardTimer);
+      discardTimer = null;
+    }
     isConfirmingDiscard = false;
     actionStatusMessage = null;
   }
@@ -58,11 +62,17 @@
   function startDiscardConfirmation() {
     isConfirmingDiscard = true;
     discardCountdown = 5;
-    if (discardTimer) clearInterval(discardTimer);
+    if (discardTimer !== null) {
+      clearInterval(discardTimer);
+      discardTimer = null;
+    }
     discardTimer = setInterval(() => {
       discardCountdown -= 1;
       if (discardCountdown <= 0) {
-        clearInterval(discardTimer);
+        if (discardTimer !== null) {
+          clearInterval(discardTimer);
+          discardTimer = null;
+        }
         isConfirmingDiscard = false;
       }
     }, 1000);
@@ -81,8 +91,8 @@
       worktree = updatedWt;
       dispatch('worktreeUpdated', updatedWt);
       actionStatusMessage = 'Changes stashed safely. You can now select a branch!';
-    } catch (err: any) {
-      errorMessage = err?.message || err?.toString() || 'Failed to stash changes';
+    } catch (err: unknown) {
+      errorMessage = toErrorMessage(err, 'Failed to stash changes');
     } finally {
       isStashing = false;
     }
@@ -90,7 +100,10 @@
 
   async function handleConfirmDiscard() {
     if (!worktree || isResolvingDirty) return;
-    if (discardTimer) clearInterval(discardTimer);
+    if (discardTimer !== null) {
+      clearInterval(discardTimer);
+      discardTimer = null;
+    }
     isConfirmingDiscard = false;
     isDiscarding = true;
     errorMessage = null;
@@ -102,8 +115,8 @@
       worktree = updatedWt;
       dispatch('worktreeUpdated', updatedWt);
       actionStatusMessage = 'All uncommitted changes discarded. Worktree is clean!';
-    } catch (err: any) {
-      errorMessage = err?.message || err?.toString() || 'Failed to discard changes';
+    } catch (err: unknown) {
+      errorMessage = toErrorMessage(err, 'Failed to discard changes');
     } finally {
       isDiscarding = false;
     }
@@ -116,8 +129,8 @@
         editor: $appConfig.defaultEditor || 'vscode',
         path: worktree.path
       });
-    } catch (err: any) {
-      errorMessage = err?.message || err?.toString() || 'Failed to open in editor';
+    } catch (err: unknown) {
+      errorMessage = toErrorMessage(err, 'Failed to open in editor');
     }
   }
 

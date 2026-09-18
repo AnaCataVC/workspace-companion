@@ -23,6 +23,8 @@
   import { branchSelection, selectedBranchList } from './lib/stores/branchSelection';
   import { installedEditors } from './lib/stores/editors';
   import { notifications } from './lib/stores/notifications';
+  import { invoke } from '@tauri-apps/api/core';
+  import { toErrorMessage } from './lib/utils/errors';
   import type {
     RepositoryWorktrees,
     WorktreeInfo,
@@ -87,13 +89,12 @@
   let isCreatingWorktree: boolean = false;
   let newWorktreeError: string | null = null;
 
-  async function invokeTauri<T>(cmd: string, args: Record<string, any> = {}): Promise<T> {
+  async function invokeTauri<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-      const { invoke } = await import('@tauri-apps/api/core');
       return await invoke<T>(cmd, args);
     } else {
-      // Mock data for web development/preview
-      console.warn(`[Mock IPC] Invoked "${cmd}" with args:`, args);
+      // Mock data for web development/preview outside Tauri
+      const mockArgs = args as Record<string, any>;
       if (cmd === 'get_app_config') {
         return {
           version: 1,
@@ -106,7 +107,7 @@
         } as unknown as T;
       }
       if (cmd === 'save_app_config') {
-        return args.config as unknown as T;
+        return mockArgs.config as unknown as T;
       }
       if (cmd === 'scan_worktrees') {
         return null as unknown as T;
@@ -120,8 +121,8 @@
       }
       if (cmd === 'list_branches') {
         return {
-          repoPath: args.repoPath || '',
-          worktreePath: args.worktreePath || '',
+          repoPath: mockArgs.repoPath || '',
+          worktreePath: mockArgs.worktreePath || '',
           currentBranch: 'main',
           branches: [
             { name: 'main', shortName: 'main', isRemote: false, isCurrent: true, isLockedByOther: false, lastCommitSha: 'a1b2c3d', lastCommitMessage: 'feat: add UI' },
@@ -130,8 +131,8 @@
         } as unknown as T;
       }
       if (cmd === 'suggest_worktree_path') {
-        const repo = args.repoPath.split(/[\/\\]/).pop() || 'repo';
-        const clean = (args.branchName || 'branch').replace(/[\/\\]/g, '-');
+        const repo = String(mockArgs.repoPath || 'repo').split(/[\/\\]/).pop() || 'repo';
+        const clean = String(mockArgs.branchName || 'branch').replace(/[\/\\]/g, '-');
         return {
           suggestedPath: `C:/Projects/Personal/${repo}-${clean}`,
           alreadyExists: false
@@ -180,7 +181,7 @@
         return { success: true } as unknown as T;
       }
       if (cmd === 'scan_branches_for_cleanup') {
-        const repoPaths: string[] = args.repoPaths || [];
+        const repoPaths: string[] = mockArgs.repoPaths || [];
         return repoPaths.flatMap((repoPath) => [
           {
             repoPath, name: 'main', isCurrent: true, isDefault: true, isMerged: false,
@@ -219,8 +220,8 @@
       if (cfg) {
         appConfig.set(cfg);
       }
-    } catch (err) {
-      console.error('Failed to load app config:', err);
+    } catch (err: unknown) {
+      notifications.error('Configuration Error', toErrorMessage(err, 'Failed to load app config'));
     }
   }
 
@@ -234,8 +235,8 @@
       }
       isSettingsModalOpen = false;
       await refreshWorktrees();
-    } catch (err: any) {
-      notifications.error('Failed to save configuration', err?.message || String(err));
+    } catch (err: unknown) {
+      notifications.error('Failed to save configuration', toErrorMessage(err));
     } finally {
       isSavingConfig = false;
     }
@@ -248,9 +249,8 @@
 
     try {
       await invokeTauri('scan_worktrees');
-    } catch (err: any) {
-      console.error('Failed to scan worktrees:', err);
-      scanError.set(err?.toString() || 'Failed to scan worktrees');
+    } catch (err: unknown) {
+      scanError.set(toErrorMessage(err, 'Failed to scan worktrees'));
       isScanning.set(false);
     }
   }
@@ -262,8 +262,8 @@
       ghAccounts.set(accounts || []);
       const active = accounts?.find(a => a.active);
       activeGhAccount.set(active ? active.username : null);
-    } catch (err) {
-      console.error('Failed to load GH accounts:', err);
+    } catch (err: unknown) {
+      notifications.error('GitHub CLI Error', toErrorMessage(err, 'Failed to load GH accounts'));
     } finally {
       isGhLoading.set(false);
     }
@@ -276,8 +276,8 @@
     try {
       await invokeTauri('switch_gh_account', { username: targetUser });
       await refreshGhAccounts();
-    } catch (err: any) {
-      notifications.error('Failed to switch GitHub account', err?.message || String(err));
+    } catch (err: unknown) {
+      notifications.error('Failed to switch GitHub account', toErrorMessage(err));
     } finally {
       isGhLoading.set(false);
     }
@@ -291,8 +291,8 @@
       try {
         await invokeTauri('switch_gh_account', { username: repo.associatedAccount });
         await refreshGhAccounts();
-      } catch (e) {
-        console.warn('Smart switch account warning:', e);
+      } catch {
+        // Non-blocking context switch attempt
       }
     }
   }
@@ -300,8 +300,8 @@
   function handleOpenPath(event: CustomEvent<string>) {
     const path = event.detail;
     ensureMatchingAccountForPath(path);
-    invokeTauri('open_path', { path }).catch((err: any) => {
-      notifications.error('Could not open folder', err?.message || String(err));
+    invokeTauri('open_path', { path }).catch((err: unknown) => {
+      notifications.error('Could not open folder', toErrorMessage(err));
     });
   }
 
@@ -309,8 +309,8 @@
     const { editor, path } = event.detail;
     // Account switch runs concurrently, not awaited: it must not delay the editor launch itself.
     ensureMatchingAccountForPath(path);
-    invokeTauri('open_in_editor', { editor, path }).catch((err: any) => {
-      notifications.error(`Could not open editor (${editor})`, err?.message || String(err));
+    invokeTauri('open_in_editor', { editor, path }).catch((err: unknown) => {
+      notifications.error(`Could not open editor (${editor})`, toErrorMessage(err));
     });
   }
 
@@ -318,8 +318,8 @@
     const { terminal, path } = event.detail;
     if (terminal === 'none') return;
     ensureMatchingAccountForPath(path);
-    invokeTauri('open_in_terminal', { terminal, path }).catch((err: any) => {
-      notifications.error(`Could not open terminal (${terminal})`, err?.message || String(err));
+    invokeTauri('open_in_terminal', { terminal, path }).catch((err: unknown) => {
+      notifications.error(`Could not open terminal (${terminal})`, toErrorMessage(err));
     });
   }
 
@@ -338,8 +338,8 @@
         worktreePath: selectedWorktreeForBranchSwitch.path
       });
       branchesResponse = res;
-    } catch (err: any) {
-      branchSwitchError = err?.message || err?.toString() || 'Failed to list branches';
+    } catch (err: unknown) {
+      branchSwitchError = toErrorMessage(err, 'Failed to list branches');
     } finally {
       isLoadingBranches = false;
     }
@@ -373,8 +373,8 @@
       } else {
         await refreshWorktrees();
       }
-    } catch (err: any) {
-      branchSwitchError = err?.message || err?.toString() || 'Failed to switch branch';
+    } catch (err: unknown) {
+      branchSwitchError = toErrorMessage(err, 'Failed to switch branch');
     } finally {
       isSwitchingBranch = false;
     }
@@ -446,8 +446,8 @@
       } else {
         await refreshWorktrees();
       }
-    } catch (err: any) {
-      newWorktreeError = err?.message || err?.toString() || 'Failed to create worktree';
+    } catch (err: unknown) {
+      newWorktreeError = toErrorMessage(err, 'Failed to create worktree');
     } finally {
       isCreatingWorktree = false;
     }
@@ -481,8 +481,8 @@
           )
           .filter((r) => r.worktrees.length > 0)
       );
-    } catch (err: any) {
-      notifications.error('Error deleting worktree', err?.message || String(err));
+    } catch (err: unknown) {
+      notifications.error('Error deleting worktree', toErrorMessage(err));
     } finally {
       isDeletingWorktree = false;
     }
@@ -536,8 +536,8 @@
         const skippedNote = summary.skippedCount > 0 ? ` ${summary.skippedCount} protected worktree(s) skipped.` : '';
         notifications.success('Worktrees removed', `Successfully removed ${summary.deletedCount} worktree(s).${skippedNote}`);
       }
-    } catch (err: any) {
-      batchDeleteError = err?.message || err?.toString() || 'Failed to remove worktrees';
+    } catch (err: unknown) {
+      batchDeleteError = toErrorMessage(err, 'Failed to remove worktrees');
     } finally {
       isBatchDeleting = false;
     }
@@ -614,8 +614,8 @@
     try {
       const entries = await invokeTauri<BranchStatusEntry[]>('scan_branches_for_cleanup', { repoPaths: paths });
       scannedBranches.set(entries || []);
-    } catch (err: any) {
-      branchScanError.set(err?.message || err?.toString() || 'Failed to scan branches');
+    } catch (err: unknown) {
+      branchScanError.set(toErrorMessage(err, 'Failed to scan branches'));
     } finally {
       isScanningBranches.set(false);
     }
@@ -685,8 +685,8 @@
         const skippedNote = summary.skippedCount > 0 ? ` ${summary.skippedCount} protected branch(es) skipped.` : '';
         notifications.success('Branches deleted', `Successfully deleted ${summary.deletedCount} branch(es).${skippedNote}`);
       }
-    } catch (err: any) {
-      branchBatchDeleteError = err?.message || err?.toString() || 'Failed to delete branches';
+    } catch (err: unknown) {
+      branchBatchDeleteError = toErrorMessage(err, 'Failed to delete branches');
     } finally {
       isBranchBatchDeleting = false;
     }
@@ -698,8 +698,8 @@
       if (editors && editors.length > 0) {
         installedEditors.set(editors);
       }
-    } catch (err) {
-      console.error('Failed to detect editors:', err);
+    } catch (err: unknown) {
+      // Non-fatal: default fallback editors remain active in store
     }
   }
 
@@ -707,8 +707,8 @@
   $: {
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
       import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
-        getCurrentWindow().setAlwaysOnTop($isPinned).catch((err) => {
-          console.warn('Failed to update window alwaysOnTop:', err);
+        getCurrentWindow().setAlwaysOnTop($isPinned).catch(() => {
+          // Window focus/pin sync non-fatal fallback
         });
       });
     }
@@ -736,8 +736,8 @@
         unlistenDone = await listen('scan-complete', () => {
           isScanning.set(false);
         });
-      } catch (err) {
-        console.error('Failed to setup scan event listeners:', err);
+      } catch (err: unknown) {
+        notifications.error('Event Listener Error', toErrorMessage(err, 'Failed to setup scan event listeners'));
       }
     }
 

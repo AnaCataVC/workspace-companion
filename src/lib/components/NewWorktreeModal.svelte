@@ -12,6 +12,7 @@
     Sparkles
   } from 'lucide-svelte';
   import { closeOnEscape } from '../actions/closeOnEscape';
+  import { toErrorMessage } from '../utils/errors';
 
   export let isOpen: boolean = false;
   export let repositories: RepositoryWorktrees[] = [];
@@ -93,8 +94,8 @@
       if (!currentChoiceStillOffered && unassigned.length > 0) {
         existingBranch = unassigned[0].shortName;
       }
-    } catch (e) {
-      console.error('Failed to load branches:', e);
+    } catch (e: unknown) {
+      errorMessage = toErrorMessage(e, 'Failed to load branches');
     } finally {
       isLoadingBranches = false;
       updateSuggestedPath();
@@ -114,8 +115,9 @@
       const res = await onSuggestPath(selectedRepoPath, activeBranchToSuggest);
       targetPath = res.suggestedPath;
       isPathColliding = res.alreadyExists;
-    } catch (e) {
-      console.error('Failed to suggest path:', e);
+    } catch (e: unknown) {
+      // Non-fatal: if path suggestion fails, keep user's manual input or fallback
+      errorMessage = toErrorMessage(e, 'Failed to suggest path');
     } finally {
       isSuggestingPath = false;
     }

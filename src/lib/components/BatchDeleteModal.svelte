@@ -6,6 +6,7 @@
   import { forceBatchWorktreeDelete } from '../stores/forceDeleteIntent';
   import { worktreeProtectionReason } from '../utils/protectionReason';
   import { invoke } from '@tauri-apps/api/core';
+  import { toErrorMessage } from '../utils/errors';
 
   export let isOpen: boolean = false;
   export let targets: BatchDeleteTarget[] = [];
@@ -110,11 +111,11 @@
       summary = { ...summary };
 
       dispatch('itemDeleted', { worktreePath, repoPath: target.repoPath });
-    } catch (err: any) {
-      console.error('Failed to unlock and remove worktree:', err);
+    } catch (err: unknown) {
+      const formattedError = toErrorMessage(err);
       const errIdx = summary.errors.findIndex((e) => e.worktreePath === worktreePath);
       if (errIdx !== -1) {
-        summary.errors[errIdx].error = `Unlock & remove failed: ${err?.message || err?.toString()}`;
+        summary.errors[errIdx].error = `Unlock & remove failed: ${formattedError}`;
         summary = { ...summary };
       }
     } finally {
