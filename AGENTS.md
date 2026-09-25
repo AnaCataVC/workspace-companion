@@ -23,7 +23,7 @@ This document serves as the operational manual, architecture reference, and work
   - `lib/utils/`: Pure helpers (`errors.ts`, `paths.ts` for separator-boundary path matching, `protectionReason.ts`).
   - `lib/types.ts`: TypeScript contracts and data structures.
   - Modern pastel theming and Tailwind CSS styling.
-- **`releases/`**: Standalone installers (`.msi`, `setup.exe`, Portable `.exe`).
+- **`releases/`**: Standalone Windows installer (`Workspace-Companion-v<version>-Setup.exe`, NSIS) and checksums.
 
 ---
 
@@ -113,3 +113,4 @@ npx tauri build
 4. **Config Schema Evolution & Backward Compatibility**: Always annotate new fields in `AppConfig` with `#[serde(default = "...")]` in Rust and provide fallback defaults via nullish coalescing (`??`) in TypeScript. This prevents deserialization failures on existing `app_config.json` files.
 5. **Launcher Disambiguation & Subprocess Safety**: Always distinguish between GUI code editors (`open_in_editor`) and interactive CLI/terminal environments (`open_in_terminal`). Escape literal paths when interpolating into shell commands (e.g. `path.replace('\'', "''")` for PowerShell).
 6. **Direct GUI IDE Binary Resolution**: GUI code editors (VS Code, Cursor, Windsurf, Antigravity IDE) must be resolved directly to their native Win32 `.exe` via `resolve_gui_binary` (inspecting `%LOCALAPPDATA%`, `%ProgramFiles%`, Insiders, and dynamic PATH parent un-nesting) and spawned without shell wrappers to guarantee instant, zero-console execution.
+7. **Release Packaging & Distribution (Setup EXE Invariant)**: For all releases, packaging is strictly limited to the Windows NSIS Setup executable (`Workspace-Companion-v<version>-Setup.exe`) and `SHA256SUMS.txt`. The `tauri.conf.json` bundle targets are restricted to `["nsis"]`. Do not generate or distribute `.msi` or standalone `.exe` portable bundles unless explicitly asked by the user.
