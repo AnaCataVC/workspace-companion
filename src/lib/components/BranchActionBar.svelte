@@ -20,7 +20,7 @@
   <div class="fixed bottom-3 inset-x-3 z-40 bg-neutral-950/95 border border-rose-800/60 rounded-xl p-2.5 shadow-2xl backdrop-blur-md flex items-center justify-between animate-in slide-in-from-bottom-2 duration-150 select-none">
     <!-- Left Info -->
     <div class="flex items-center gap-2 text-xs">
-      <span class="flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-600 text-white font-mono text-[10px] font-bold">
+      <span class="flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-600 text-white font-mono text-[11px] font-bold">
         {$selectedBranchCount}
       </span>
       <span class="text-neutral-200 font-medium">
@@ -28,7 +28,7 @@
       </span>
 
       {#if $hasUnmergedBranchSelected}
-        <span class="px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800/80 text-[10px] flex items-center gap-1 font-mono">
+        <span class="px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800/80 text-[11px] flex items-center gap-1 font-mono">
           <GitBranch size={10} class="text-amber-400" />
           <span>contains unmerged</span>
         </span>

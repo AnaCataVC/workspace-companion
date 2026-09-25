@@ -4,10 +4,34 @@ use crate::services::git::{
     WorktreeBranchesResponse, WorktreeDiffSummary, WorktreeEntry,
 };
 use crate::services::worktree_cleaner::{
-    BatchDeleteSummary, BatchDeleteTarget, WorktreeCleanerService,
+    BatchDeleteSummary, BatchDeleteTarget, RepositoryWorktrees, WorktreeCleanerService,
 };
 use rayon::prelude::*;
+use serde::Serialize;
 use tauri::{AppHandle, Emitter};
+
+/// Every scan event carries the id the frontend passed to `scan_worktrees`, so events from a
+/// scan that a newer refresh superseded can be told apart and ignored.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct RepoScannedEvent<'a> {
+    scan_id: u64,
+    repo: &'a RepositoryWorktrees,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct RepoScanFailedEvent {
+    scan_id: u64,
+    repo_path: String,
+    error: String,
+}
+
+#[derive(Serialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+struct ScanCompleteEvent {
+    scan_id: u64,
+}
 
 #[tauri::command]
 pub async fn get_worktree_diff_summary(
@@ -30,25 +54,41 @@ pub async fn save_app_config(config: AppConfig) -> Result<AppConfig, String> {
 }
 
 #[tauri::command]
-pub async fn scan_worktrees(app: AppHandle) -> Result<(), String> {
+pub async fn scan_worktrees(app: AppHandle, scan_id: u64) -> Result<(), String> {
     let config = ConfigService::load_config();
     let discovered = WorktreeCleanerService::discover_repositories(&config);
 
     tauri::async_runtime::spawn_blocking(move || {
-        discovered
-            .par_iter()
-            .filter_map(|repo| {
-                WorktreeCleanerService::scan_repository(
-                    &repo.path,
-                    repo.associated_account.clone(),
-                    repo.watch_folder_path.clone(),
-                )
-            })
-            .for_each(|repo_info| {
-                let _ = app.emit("repo-scanned", &repo_info);
-            });
+        discovered.par_iter().for_each(|repo| {
+            match WorktreeCleanerService::scan_repository(
+                &repo.path,
+                repo.associated_account.clone(),
+                repo.watch_folder_path.clone(),
+            ) {
+                Ok(Some(repo_info)) => {
+                    let _ = app.emit(
+                        "repo-scanned",
+                        RepoScannedEvent {
+                            scan_id,
+                            repo: &repo_info,
+                        },
+                    );
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    let _ = app.emit(
+                        "repo-scan-failed",
+                        RepoScanFailedEvent {
+                            scan_id,
+                            repo_path: repo.path.to_string_lossy().to_string(),
+                            error,
+                        },
+                    );
+                }
+            }
+        });
 
-        let _ = app.emit("scan-complete", ());
+        let _ = app.emit("scan-complete", ScanCompleteEvent { scan_id });
     })
     .await
     .map_err(|e| e.to_string())
@@ -80,9 +120,11 @@ pub async fn remove_worktrees_batch(
 
 #[tauri::command]
 pub async fn prune_worktrees(repo_path: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || WorktreeCleanerService::prune_worktrees(&repo_path))
-        .await
-        .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        WorktreeCleanerService::prune_worktrees(&repo_path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -135,6 +177,13 @@ pub async fn checkout_worktree_branch(
 }
 
 #[tauri::command]
+pub async fn detach_worktree_head(worktree_path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || GitService::detach_worktree_head(&worktree_path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn suggest_worktree_path(
     repo_path: String,
     branch_name: String,
@@ -144,6 +193,11 @@ pub async fn suggest_worktree_path(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn is_worktree_target_occupied(target_path: String) -> bool {
+    GitService::is_occupied_target(std::path::Path::new(target_path.trim()))
 }
 
 #[tauri::command]
@@ -182,9 +236,7 @@ pub async fn git_stash_worktree(
 }
 
 #[tauri::command]
-pub async fn git_discard_worktree_changes(
-    worktree_path: String,
-) -> Result<WorktreeEntry, String> {
+pub async fn git_discard_worktree_changes(worktree_path: String) -> Result<WorktreeEntry, String> {
     tauri::async_runtime::spawn_blocking(move || {
         GitService::discard_worktree_changes(&worktree_path)?;
         WorktreeCleanerService::build_single_worktree_info(&worktree_path, &worktree_path)
@@ -205,3 +257,24 @@ pub async fn git_unlock_worktree(
     .map_err(|e| e.to_string())?
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scan_events_serialize_scan_id_in_camel_case() {
+        let complete = serde_json::to_value(ScanCompleteEvent { scan_id: 7 }).unwrap();
+        assert_eq!(complete, serde_json::json!({ "scanId": 7 }));
+
+        let failed = serde_json::to_value(RepoScanFailedEvent {
+            scan_id: 7,
+            repo_path: "repo".into(),
+            error: "boom".into(),
+        })
+        .unwrap();
+        assert_eq!(
+            failed,
+            serde_json::json!({ "scanId": 7, "repoPath": "repo", "error": "boom" })
+        );
+    }
+}

@@ -9,6 +9,8 @@
   export let badgeClass: string;
   export let iconSize: number = 10;
   export let popoverPositionClass: string = 'right-0 top-full mt-1.5';
+  /** Changes when the worktree's dirty state changes; the cached summary is dropped then. */
+  export let uncommittedCount: number = 0;
 
   const DIFF_FETCH_DEBOUNCE_MS = 180;
 
@@ -17,6 +19,14 @@
   let isLoadingDiff = false;
   let diffError: string | null = null;
   let diffFetchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  let cachedForCount = uncommittedCount;
+  $: if (uncommittedCount !== cachedForCount) {
+    cachedForCount = uncommittedCount;
+    diffSummary = null;
+    diffError = null;
+    if (showDiffPopover) fetchDiffSummary();
+  }
 
   function handleMouseEnter() {
     showDiffPopover = true;
@@ -57,38 +67,53 @@
 </script>
 
 <div class="relative" role="group" on:mouseenter={handleMouseEnter} on:mouseleave={handleMouseLeave}>
-  <span class={badgeClass}>
+  <!-- A button so keyboard focus and clicks (touch, no hover) open the same popover as hover. -->
+  <button
+    type="button"
+    class={badgeClass}
+    aria-expanded={showDiffPopover}
+    aria-label={`${label}: show uncommitted changes`}
+    on:click={() => (showDiffPopover ? handleMouseLeave() : handleMouseEnter())}
+    on:focus={handleMouseEnter}
+    on:blur={handleMouseLeave}
+    on:keydown={(e) => {
+      if (e.key === 'Escape' && showDiffPopover) {
+        e.preventDefault();
+        handleMouseLeave();
+      }
+    }}
+  >
     <Flame size={iconSize} class="text-rose-400 animate-pulse" />
     {label}
-  </span>
+  </button>
 
   <!-- Lazy Diff Popover -->
   {#if showDiffPopover}
     <div
       class="absolute {popoverPositionClass} z-40 w-64 p-2 rounded-lg bg-neutral-900 border border-neutral-700 shadow-2xl text-[11px] text-neutral-200 pointer-events-none"
     >
-      <div class="font-semibold text-[10px] text-rose-400 mb-1 flex items-center justify-between border-b border-neutral-800 pb-1">
+      <div class="font-semibold text-[11px] text-rose-400 mb-1 flex items-center justify-between border-b border-neutral-800 pb-1">
         <span>Uncommitted Changes</span>
         {#if isLoadingDiff}
-          <span class="text-neutral-500 animate-pulse text-[9px]">Analyzing...</span>
+          <span class="text-neutral-400 animate-pulse text-[11px]">Analyzing...</span>
         {/if}
       </div>
 
       {#if diffSummary}
-        <p class="text-neutral-300 font-mono text-[10px] mb-1.5">
+        <p class="text-neutral-300 font-mono text-[11px] mb-1.5">
           {diffSummary.summaryText}
         </p>
         {#if diffSummary.modifiedFiles.length > 0}
-          <div class="max-h-28 overflow-y-auto space-y-0.5 font-mono text-[9px] text-neutral-400">
+          <div class="max-h-28 overflow-y-auto space-y-0.5 font-mono text-[11px] text-neutral-400">
             {#each diffSummary.modifiedFiles as file}
               <div class="truncate text-neutral-300">{file}</div>
             {/each}
           </div>
         {/if}
       {:else if diffError}
-        <span class="text-rose-400 text-[10px]">{diffError}</span>
+        <span class="text-rose-400 text-[11px]">{diffError}</span>
       {:else if !isLoadingDiff}
-        <span class="text-neutral-400 text-[10px]">Hovered to inspect git diff</span>
+        <span class="text-neutral-400 text-[11px]">Hovered to inspect git diff</span>
       {/if}
     </div>
   {/if}

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { isPinned, searchFilter } from '../stores/worktrees';
+  import { branchSearchFilter } from '../stores/branchCleaner';
   import { activeGhAccount } from '../stores/ghAuth';
   import { viewDensity } from '../stores/appConfig';
   import { RefreshCw, Pin, PinOff, Github, Search, Plus, Settings2, LayoutList, LayoutGrid, GitBranch, FolderTree } from 'lucide-svelte';
@@ -11,10 +12,7 @@
   export let onOpenGhModal: () => void;
   export let onOpenNewWorktreeModal: () => void;
   export let onOpenSettingsModal: () => void;
-
-  function togglePin() {
-    isPinned.update(p => !p);
-  }
+  export let onTogglePin: () => void;
 
   function toggleDensity() {
     viewDensity.update(d => (d === 'compact' ? 'detailed' : 'compact'));
@@ -76,6 +74,7 @@
         type="button"
         on:click={toggleDensity}
         title={$viewDensity === 'compact' ? "Switch to Detailed Cards view" : "Switch to Compact Tree view"}
+        aria-label={$viewDensity === 'compact' ? "Switch to Detailed Cards view" : "Switch to Compact Tree view"}
         class="p-1.5 rounded-md hover:bg-neutral-800 text-neutral-400 hover:text-indigo-300 transition-colors"
       >
         {#if $viewDensity === 'compact'}
@@ -101,6 +100,7 @@
       <button
         on:click={onOpenSettingsModal}
         title="Watched Folders & Account Settings"
+        aria-label="Watched Folders & Account Settings"
         class="p-1.5 rounded-md hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 transition-colors"
       >
         <Settings2 size={14} />
@@ -108,8 +108,9 @@
 
       <!-- Pin Window Toggle -->
       <button
-        on:click={togglePin}
+        on:click={onTogglePin}
         title={$isPinned ? "Unpin window (auto-hide on blur)" : "Pin window (keep visible)"}
+        aria-label={$isPinned ? "Unpin window (auto-hide on blur)" : "Pin window (keep visible)"}
         class="p-1.5 rounded-md hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 transition-colors"
       >
         {#if $isPinned}
@@ -124,6 +125,7 @@
         on:click={onRefresh}
         disabled={isRefreshing}
         title={activeView === 'worktrees' ? 'Refresh Worktrees' : 'Refresh Branches'}
+        aria-label={activeView === 'worktrees' ? 'Refresh Worktrees' : 'Refresh Branches'}
         class="p-1.5 rounded-md hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 transition-colors disabled:opacity-50"
       >
         <RefreshCw size={14} class={isRefreshing ? 'animate-spin text-indigo-400' : ''} />
@@ -134,11 +136,22 @@
   {#if activeView === 'worktrees'}
     <!-- Search Filter Input -->
     <div class="relative flex items-center">
-      <Search size={13} class="absolute left-2.5 text-neutral-500 pointer-events-none" />
+      <Search size={13} class="absolute left-2.5 text-neutral-400 pointer-events-none" />
       <input
         type="text"
         bind:value={$searchFilter}
         placeholder="Filter worktree, branch or path..."
+        class="w-full bg-neutral-900 border border-neutral-800 rounded-md pl-8 pr-3 py-1 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-indigo-500/70 focus:ring-1 focus:ring-indigo-500/30 transition-all font-sans"
+      />
+    </div>
+  {:else}
+    <!-- Branch Search Filter Input -->
+    <div class="relative flex items-center">
+      <Search size={13} class="absolute left-2.5 text-neutral-400 pointer-events-none" />
+      <input
+        type="text"
+        bind:value={$branchSearchFilter}
+        placeholder="Filter branch name or repo path..."
         class="w-full bg-neutral-900 border border-neutral-800 rounded-md pl-8 pr-3 py-1 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-indigo-500/70 focus:ring-1 focus:ring-indigo-500/30 transition-all font-sans"
       />
     </div>

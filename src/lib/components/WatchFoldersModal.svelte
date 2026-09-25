@@ -14,6 +14,7 @@
     Settings2
   } from 'lucide-svelte';
   import { closeOnEscape } from '../actions/closeOnEscape';
+  import { autofocus } from '../actions/autofocus';
 
   export let isOpen: boolean = false;
   export let config: AppConfig;
@@ -32,12 +33,32 @@
   let localDefaultTerminal: SupportedTerminal = 'wt';
   let localShowTerminalButton: boolean = true;
 
-  $: if (isOpen && config) {
-    localWatchFolders = JSON.parse(JSON.stringify(config.watchFolders || []));
-    localAutoSwitch = config.autoSwitchAccount ?? true;
-    localDefaultEditor = config.defaultEditor || 'vscode';
-    localDefaultTerminal = config.defaultTerminal || 'wt';
-    localShowTerminalButton = config.showTerminalButton ?? true;
+  // Copied only on the closed -> open transition: re-copying on every `config` change (e.g. the
+  // pin toggle saving the config) would silently wipe edits in progress.
+  let wasOpen = false;
+  let initialSnapshot = '';
+  $: syncOnOpen(isOpen);
+
+  function syncOnOpen(open: boolean) {
+    if (open && !wasOpen && config) {
+      localWatchFolders = JSON.parse(JSON.stringify(config.watchFolders || []));
+      localAutoSwitch = config.autoSwitchAccount ?? true;
+      localDefaultEditor = config.defaultEditor || 'vscode';
+      localDefaultTerminal = config.defaultTerminal || 'wt';
+      localShowTerminalButton = config.showTerminalButton ?? true;
+      initialSnapshot = snapshot();
+    }
+    wasOpen = open;
+  }
+
+  function snapshot(): string {
+    return JSON.stringify([localWatchFolders, localAutoSwitch, localDefaultEditor, localDefaultTerminal, localShowTerminalButton]);
+  }
+
+  function requestClose() {
+    if (isSaving) return;
+    if (snapshot() !== initialSnapshot && !window.confirm('Discard unsaved settings changes?')) return;
+    dispatch('close');
   }
 
   function addFolder() {
@@ -60,6 +81,8 @@
 
   function handleSave() {
     const updatedConfig: AppConfig = {
+      // Keep fields this modal does not edit (e.g. isPinned).
+      ...config,
       version: 1,
       watchFolders: localWatchFolders.filter(f => f.path.trim().length > 0),
       autoSwitchAccount: localAutoSwitch,
@@ -71,10 +94,11 @@
   }
 </script>
 
-<svelte:window use:closeOnEscape={{ enabled: () => isOpen, onClose: () => dispatch('close') }} />
+<svelte:window use:closeOnEscape={{ enabled: () => isOpen, onClose: requestClose }} />
 
 {#if isOpen}
   <div
+    use:autofocus
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-150"
     role="dialog"
     aria-modal="true"
@@ -97,9 +121,10 @@
         </div>
         <button
           type="button"
-          on:click={() => dispatch('close')}
+          on:click={requestClose}
           disabled={isSaving}
-          class="text-neutral-500 hover:text-neutral-300 p-1 rounded-md hover:bg-neutral-800 transition-colors"
+          aria-label="Close"
+          class="text-neutral-400 hover:text-neutral-300 p-1.5 rounded-md hover:bg-neutral-800 transition-colors"
         >
           <X size={14} />
         </button>
@@ -108,8 +133,8 @@
       <!-- Watched Folders List -->
       <div class="flex-1 overflow-y-auto min-h-[180px] max-h-[340px] space-y-2.5 pr-1">
         {#if localWatchFolders.length === 0}
-          <div class="h-32 flex flex-col items-center justify-center text-neutral-500 text-xs text-center border border-dashed border-neutral-800 rounded-lg p-4 gap-2">
-            <FolderSync size={24} class="text-neutral-600" />
+          <div class="h-32 flex flex-col items-center justify-center text-neutral-400 text-xs text-center border border-dashed border-neutral-800 rounded-lg p-4 gap-2">
+            <FolderSync size={24} class="text-neutral-400" />
             <p>No watched folders configured yet.</p>
             <button
               type="button"
@@ -132,7 +157,7 @@
                 />
 
                 <div class="relative flex-1">
-                  <Folder size={12} class="absolute left-2.5 top-2.5 text-neutral-500" />
+                  <Folder size={12} class="absolute left-2.5 top-2.5 text-neutral-400" />
                   <input
                     type="text"
                     bind:value={folder.path}
@@ -145,7 +170,7 @@
                   type="button"
                   on:click={() => removeFolder(idx)}
                   title="Remove folder"
-                  class="p-1 rounded text-neutral-500 hover:text-rose-400 hover:bg-rose-950/40 transition-colors"
+                  class="p-1 rounded text-neutral-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors"
                 >
                   <Trash2 size={13} />
                 </button>
@@ -155,7 +180,7 @@
               <div class="flex items-center justify-between gap-3 text-[11px] pl-6">
                 <!-- Account Selector -->
                 <div class="flex items-center gap-1.5 flex-1">
-                  <Github size={12} class="text-neutral-500 flex-shrink-0" />
+                  <Github size={12} class="text-neutral-400 flex-shrink-0" />
                   <span class="text-neutral-400 flex-shrink-0">Account:</span>
                   <select
                     bind:value={folder.accountUsername}
@@ -170,14 +195,14 @@
 
                 <!-- Scan Depth Pills -->
                 <div class="flex items-center gap-1.5 flex-shrink-0">
-                  <Layers size={12} class="text-neutral-500 flex-shrink-0" />
+                  <Layers size={12} class="text-neutral-400 flex-shrink-0" />
                   <span class="text-neutral-400 flex-shrink-0">Depth:</span>
                   <div class="flex rounded bg-neutral-900 border border-neutral-800 p-0.5">
                     {#each [1, 2, 3, 4, 5] as depth}
                       <button
                         type="button"
                         on:click={() => (folder.maxDepth = depth)}
-                        class="px-1.5 py-0.2 text-[10px] font-mono rounded transition-all
+                        class="px-1.5 py-0.2 text-[11px] font-mono rounded transition-all
                           {folder.maxDepth === depth
                             ? 'bg-indigo-600 text-white font-medium shadow-2xs'
                             : 'text-neutral-400 hover:text-neutral-200'}"
@@ -208,7 +233,7 @@
         <div class="flex items-center justify-between">
           <div class="flex flex-col">
             <span class="text-[11px] font-medium text-neutral-300">Default Editor / IDE</span>
-            <span class="text-[10px] text-neutral-500">The primary IDE launched when clicking worktree action buttons</span>
+            <span class="text-[11px] text-neutral-400">The primary IDE launched when clicking worktree action buttons</span>
           </div>
           <select
             bind:value={localDefaultEditor}
@@ -226,7 +251,7 @@
         <div class="flex items-center justify-between">
           <div class="flex flex-col">
             <span class="text-[11px] font-medium text-neutral-300">Default Terminal / CLI</span>
-            <span class="text-[10px] text-neutral-500">Console environment launched for worktree terminal actions</span>
+            <span class="text-[11px] text-neutral-400">Console environment launched for worktree terminal actions</span>
           </div>
           <select
             bind:value={localDefaultTerminal}
@@ -251,7 +276,7 @@
             <span class="text-[11px] font-medium text-neutral-300">
               Show quick Terminal / CLI button in worktree rows
             </span>
-            <span class="text-[10px] text-neutral-500">
+            <span class="text-[11px] text-neutral-400">
               When disabled, only the default IDE and folder explorer buttons are shown.
             </span>
           </div>
@@ -268,7 +293,7 @@
             <span class="text-[11px] font-medium text-neutral-300">
               Auto-switch GitHub CLI account on workspace actions
             </span>
-            <span class="text-[10px] text-neutral-500">
+            <span class="text-[11px] text-neutral-400">
               Automatically runs `gh auth switch` when opening or modifying repositories assigned to a different account.
             </span>
           </div>
@@ -279,7 +304,7 @@
       <div class="pt-2 border-t border-neutral-800 flex items-center justify-end gap-2 text-xs">
         <button
           type="button"
-          on:click={() => dispatch('close')}
+          on:click={requestClose}
           disabled={isSaving}
           class="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition-colors"
         >

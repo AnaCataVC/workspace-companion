@@ -3,6 +3,7 @@
   import { Trash2, X, ShieldAlert, CheckCircle2, GitBranch, GitMerge } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
   import { closeOnEscape } from '../actions/closeOnEscape';
+  import { autofocus } from '../actions/autofocus';
   import { forceBranchDelete } from '../stores/forceDeleteIntent';
 
   export let isOpen: boolean = false;
@@ -70,7 +71,8 @@
 <svelte:window use:closeOnEscape={{ enabled: () => isOpen, onClose: close }} />
 
 {#if isOpen}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-100 select-none">
+  <div
+    use:autofocus class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-100 select-none">
     <div class="w-full max-w-md bg-neutral-900 border border-neutral-800 rounded-xl p-4 shadow-2xl flex flex-col gap-3 max-h-[85vh]">
       <!-- Header -->
       <div class="flex items-center justify-between border-b border-neutral-800 pb-2">
@@ -81,7 +83,7 @@
           </h2>
         </div>
         {#if !isDeleting}
-          <button on:click={close} class="text-neutral-500 hover:text-neutral-300 p-1 rounded transition-colors">
+          <button on:click={close} class="text-neutral-400 hover:text-neutral-300 p-1.5 rounded transition-colors" aria-label="Close">
             <X size={14} />
           </button>
         {/if}
@@ -107,10 +109,10 @@
 
           {#if summary.errors && summary.errors.length > 0}
             <div class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-              <span class="text-[10px] uppercase font-semibold text-rose-400">Reported issues:</span>
+              <span class="text-[11px] uppercase font-semibold text-rose-400">Reported issues:</span>
               {#each summary.errors as err}
                 <div
-                  class="p-2 rounded border text-[10px] font-mono
+                  class="p-2 rounded border text-[11px] font-mono
                     {err.kind === 'skipped'
                       ? 'bg-amber-950/50 border-amber-900/40 text-amber-200'
                       : 'bg-rose-950/50 border-rose-900/40 text-rose-200'}"
@@ -151,7 +153,7 @@
                     {t.branchName}
                   </span>
                   {#if t.repoName}
-                    <span class="text-neutral-500 text-[10px] truncate max-w-[90px]" title={t.repoPath}>
+                    <span class="text-neutral-400 text-[11px] truncate max-w-[90px]" title={t.repoPath}>
                       ({t.repoName})
                     </span>
                   {/if}
@@ -159,12 +161,12 @@
 
                 <div class="flex items-center gap-1 flex-shrink-0">
                   {#if t.isMerged}
-                    <span class="px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[9px] flex items-center gap-0.5">
+                    <span class="px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[11px] flex items-center gap-0.5">
                       <GitMerge size={9} />
                       merged
                     </span>
                   {:else}
-                    <span class="px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-800 text-[9px]">
+                    <span class="px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-800 text-[11px]">
                       unmerged
                     </span>
                   {/if}
@@ -181,7 +183,7 @@
                 <p class="font-semibold text-rose-200 text-[11px]">
                   {unmergedCount} branch(es) are not merged into the default branch
                 </p>
-                <p class="text-rose-300/80 text-[10px] mt-0.5">
+                <p class="text-rose-300/80 text-[11px] mt-0.5">
                   Deleting unmerged branches without forcing will skip them to protect that work.
                 </p>
               </div>
@@ -199,12 +201,12 @@
             {#if $forceBranchDelete}
               <div class="p-2.5 rounded-lg bg-rose-950/70 border border-rose-700/70 flex flex-col gap-2">
                 <p class="text-[11px] font-semibold text-rose-100">This cannot be undone</p>
-                <div class="max-h-24 overflow-y-auto space-y-0.5 text-[10px] text-rose-200/90 font-mono no-scrollbar">
+                <div class="max-h-24 overflow-y-auto space-y-0.5 text-[11px] text-rose-200/90 font-mono no-scrollbar">
                   {#each unmergedTargets as t (`${t.repoPath}::${t.branchName}`)}
                     <p class="break-all">{t.branchName} — commits not merged into the default branch will be lost</p>
                   {/each}
                 </div>
-                <label for="branch-batch-delete-force-confirm" class="text-[10px] text-rose-200">
+                <label for="branch-batch-delete-force-confirm" class="text-[11px] text-rose-200">
                   Type <span class="font-mono font-bold text-rose-100">{FORCE_KEYWORD}</span> to confirm
                 </label>
                 <input

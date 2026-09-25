@@ -12,6 +12,7 @@
     Sparkles
   } from 'lucide-svelte';
   import { closeOnEscape } from '../actions/closeOnEscape';
+  import { autofocus } from '../actions/autofocus';
   import { toErrorMessage } from '../utils/errors';
 
   export let isOpen: boolean = false;
@@ -23,6 +24,7 @@
   export let errorMessage: string | null = null;
   export let onSuggestPath: ((repoPath: string, branchName: string) => Promise<{ suggestedPath: string; alreadyExists: boolean }>) | null = null;
   export let onFetchBranches: ((repoPath: string) => Promise<BranchEntry[]>) | null = null;
+  export let onCheckTargetOccupied: ((targetPath: string) => Promise<boolean>) | null = null;
 
   const dispatch = createEventDispatcher<{
     close: void;
@@ -44,6 +46,11 @@
   let availableBranches: BranchEntry[] = [];
   let isLoadingBranches: boolean = false;
   let isSuggestingPath: boolean = false;
+  /** Once the user types a path, auto-suggestion stops overwriting it. */
+  let isPathEdited: boolean = false;
+  // Only the latest request may apply its result: responses can arrive out of order while typing.
+  let suggestSeq = 0;
+  let occupiedSeq = 0;
 
   $: if (isOpen && repositories.length > 0) {
     if (!selectedRepoPath || !repositories.some(r => r.repoPath === selectedRepoPath)) {
@@ -55,6 +62,7 @@
   let lastIsOpen: boolean = false;
   $: if (isOpen && !lastIsOpen) {
     lastIsOpen = true;
+    isPathEdited = false;
     if (initialExistingBranch) {
       appliedPresetBranch = initialExistingBranch;
       selectedRepoPath = initialRepoPath || selectedRepoPath;
@@ -109,22 +117,47 @@
   }
 
   async function updateSuggestedPath() {
-    if (!onSuggestPath || !selectedRepoPath) return;
+    if (!onSuggestPath || !selectedRepoPath || isPathEdited) return;
+    const seq = ++suggestSeq;
     isSuggestingPath = true;
     try {
       const res = await onSuggestPath(selectedRepoPath, activeBranchToSuggest);
+      if (seq !== suggestSeq || isPathEdited) return;
       targetPath = res.suggestedPath;
-      isPathColliding = res.alreadyExists;
     } catch (e: unknown) {
       // Non-fatal: if path suggestion fails, keep user's manual input or fallback
-      errorMessage = toErrorMessage(e, 'Failed to suggest path');
+      if (seq === suggestSeq) errorMessage = toErrorMessage(e, 'Failed to suggest path');
     } finally {
-      isSuggestingPath = false;
+      if (seq === suggestSeq) isSuggestingPath = false;
     }
   }
 
+  // Checked for every path, typed or suggested, because the suggestion is only collision-free at
+  // the moment it was computed.
+  $: checkTargetOccupied(targetPath);
+
+  async function checkTargetOccupied(path: string) {
+    const seq = ++occupiedSeq;
+    if (!onCheckTargetOccupied || !path.trim()) {
+      isPathColliding = false;
+      return;
+    }
+    try {
+      const occupied = await onCheckTargetOccupied(path);
+      if (seq === occupiedSeq) isPathColliding = occupied;
+    } catch {
+      // Non-fatal: the backend re-checks the target on create.
+      if (seq === occupiedSeq) isPathColliding = false;
+    }
+  }
+
+  function requestClose() {
+    if (isCreating) return;
+    dispatch('close');
+  }
+
   function handleCreate() {
-    if (!selectedRepoPath || !targetPath.trim() || isCreating) return;
+    if (!selectedRepoPath || !targetPath.trim() || isCreating || isPathColliding) return;
 
     if (mode === 'new') {
       const cleanBranch = newBranchName.trim();
@@ -145,27 +178,19 @@
     }
   }
 
-  function handleBranchInputKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleCreate();
-    } else if (e.key === 'Escape') {
-      // Prevent the closeOnEscape window listener from also firing for this same keypress
-      e.stopPropagation();
-      dispatch('close');
-    }
-  }
 </script>
 
-<svelte:window use:closeOnEscape={{ enabled: () => isOpen, onClose: () => dispatch('close') }} />
+<svelte:window use:closeOnEscape={{ enabled: () => isOpen, onClose: requestClose }} />
 
 {#if isOpen}
   <div
+    use:autofocus
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-150"
     role="dialog"
     aria-modal="true"
   >
-    <div
+    <form
+      on:submit|preventDefault={handleCreate}
       class="w-full max-w-lg rounded-xl bg-neutral-900 border border-neutral-800 shadow-2xl p-4 flex flex-col gap-3.5 text-neutral-200"
     >
       <!-- Header -->
@@ -182,9 +207,11 @@
           </div>
         </div>
         <button
-          on:click={() => dispatch('close')}
+          type="button"
+          on:click={requestClose}
           disabled={isCreating}
-          class="text-neutral-500 hover:text-neutral-300 p-1 rounded-md hover:bg-neutral-800 transition-colors"
+          aria-label="Close"
+          class="text-neutral-400 hover:text-neutral-300 p-1 rounded-md hover:bg-neutral-800 transition-colors"
         >
           <X size={14} />
         </button>
@@ -244,7 +271,7 @@
               id="new-wt-branch-input"
               type="text"
               bind:value={newBranchName}
-              on:keydown={handleBranchInputKeydown}
+              data-autofocus
               placeholder="e.g. feat/dashboard-redesign"
               class="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 font-mono focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
             />
@@ -289,20 +316,34 @@
       <div class="space-y-1">
         <div class="flex items-center justify-between text-[11px]">
           <label for="new-wt-target-path" class="font-medium text-neutral-400">Target Folder Location</label>
-          <span class="text-[10px] text-indigo-400 font-sans">
-            Auto-suggested sibling layout
-          </span>
+          {#if isPathEdited}
+            <button
+              type="button"
+              on:click={() => {
+                isPathEdited = false;
+                updateSuggestedPath();
+              }}
+              class="text-[11px] text-indigo-400 hover:text-indigo-300 font-sans underline"
+            >
+              Use suggested path
+            </button>
+          {:else}
+            <span class="text-[11px] text-indigo-400 font-sans">
+              Auto-suggested sibling layout
+            </span>
+          {/if}
         </div>
         <input
           id="new-wt-target-path"
           type="text"
           bind:value={targetPath}
+          on:input={() => (isPathEdited = true)}
           placeholder="C:\Users\...\Repos\project-feature"
           class="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs text-neutral-200 font-mono focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
         />
         {#if isPathColliding}
-          <p class="text-[10px] text-amber-400 flex items-center gap-1">
-            <AlertCircle size={10} /> Folder already exists on disk.
+          <p class="text-[11px] text-amber-400 flex items-center gap-1">
+            <AlertCircle size={11} /> Folder already exists and is not empty. Choose another location.
           </p>
         {/if}
       </div>
@@ -311,7 +352,7 @@
       <div class="pt-2 border-t border-neutral-800 flex items-center justify-end gap-2 text-xs">
         <button
           type="button"
-          on:click={() => dispatch('close')}
+          on:click={requestClose}
           disabled={isCreating}
           class="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition-colors"
         >
@@ -319,9 +360,8 @@
         </button>
 
         <button
-          type="button"
-          on:click={handleCreate}
-          disabled={isCreating || (mode === 'new' && !newBranchName.trim()) || (mode === 'existing' && !existingBranch)}
+          type="submit"
+          disabled={isCreating || isPathColliding || !targetPath.trim() || (mode === 'new' && !newBranchName.trim()) || (mode === 'existing' && !existingBranch)}
           class="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {#if isCreating}
@@ -333,6 +373,6 @@
           {/if}
         </button>
       </div>
-    </div>
+    </form>
   </div>
 {/if}

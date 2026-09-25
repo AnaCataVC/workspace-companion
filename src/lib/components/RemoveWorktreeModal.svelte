@@ -3,6 +3,7 @@
   import { AlertTriangle, Trash2, X, ShieldAlert, Lock } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
   import { closeOnEscape } from '../actions/closeOnEscape';
+  import { autofocus } from '../actions/autofocus';
   import { forceSingleWorktreeDelete } from '../stores/forceDeleteIntent';
   import { worktreeProtectionReason } from '../utils/protectionReason';
 
@@ -58,7 +59,8 @@
 <svelte:window use:closeOnEscape={{ enabled: () => isOpen, onClose: close }} />
 
 {#if isOpen && worktree}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-100">
+  <div
+    use:autofocus class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-100">
     <div class="w-full max-w-sm bg-neutral-900 border border-neutral-800 rounded-xl p-4 shadow-2xl flex flex-col gap-3">
       <!-- Modal Header -->
       <div class="flex items-center justify-between">
@@ -72,7 +74,8 @@
           type="button"
           on:click={close}
           disabled={isDeleting}
-          class="text-neutral-500 hover:text-neutral-300 disabled:opacity-30 disabled:hover:text-neutral-500 p-1 rounded"
+          aria-label="Close"
+          class="text-neutral-400 hover:text-neutral-300 disabled:opacity-30 disabled:hover:text-neutral-500 p-1.5 rounded"
         >
           <X size={14} />
         </button>
@@ -86,7 +89,7 @@
             <span class="font-mono text-neutral-200 font-medium break-all">
               {worktree.branch || '(detached HEAD)'}
             </span>
-            <span class="text-neutral-500 text-[11px] break-all">
+            <span class="text-neutral-400 text-[11px] break-all">
               {worktree.path}
             </span>
           </div>
@@ -97,7 +100,7 @@
             <ShieldAlert size={14} class="flex-shrink-0 text-rose-400 mt-0.5" />
             <div>
               <p class="font-medium">Uncommitted changes detected!</p>
-              <p class="text-rose-300/80 text-[10px]">
+              <p class="text-rose-300/80 text-[11px]">
                 {worktreeProtectionReason(worktree)}
               </p>
             </div>
@@ -109,7 +112,7 @@
             <Lock size={14} class="flex-shrink-0 text-amber-400 mt-0.5" />
             <div>
               <p class="font-medium">Locked worktree</p>
-              <p class="text-amber-300/80 text-[10px]">
+              <p class="text-amber-300/80 text-[11px]">
                 {worktree.locked}
               </p>
             </div>
@@ -130,10 +133,10 @@
         {#if $forceSingleWorktreeDelete}
           <div class="p-2.5 rounded-lg bg-rose-950/70 border border-rose-700/70 flex flex-col gap-2">
             <p class="text-[11px] font-semibold text-rose-100">This cannot be undone</p>
-            <p class="text-[10px] text-rose-200/90 font-mono break-all">
+            <p class="text-[11px] text-rose-200/90 font-mono break-all">
               {worktree.branch || '(detached HEAD)'} — {worktreeProtectionReason(worktree)}
             </p>
-            <label for="remove-wt-force-confirm" class="text-[10px] text-rose-200">
+            <label for="remove-wt-force-confirm" class="text-[11px] text-rose-200">
               Type <span class="font-mono font-bold text-rose-100">{FORCE_KEYWORD}</span> to confirm
             </label>
             <input

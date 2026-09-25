@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Plus, Settings2, Loader2, CornerDownLeft, AlertCircle } from 'lucide-svelte';
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onDestroy } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
   import type { CreateWorktreeResult, SuggestWorktreePathResult, SupportedEditor, WorktreeInfo } from '../types';
   import { appConfig } from '../stores/appConfig';
@@ -15,29 +15,45 @@
     openEditor: { editor: SupportedEditor; path: string };
   }>();
 
+  const SUGGEST_DEBOUNCE_MS = 200;
+
   let isExpanded = false;
   let branchInput = '';
   let suggestedPath = '';
   let isCreating = false;
   let errorMessage: string | null = null;
+  let suggestTimer: ReturnType<typeof setTimeout> | null = null;
+  // Only the latest suggestion may apply: responses can arrive out of order while typing.
+  let suggestSeq = 0;
 
-  function sanitizeSlug(name: string): string {
-    return name
-      .trim()
-      .toLowerCase()
-      .replace(/[\/\\]/g, '-')
-      .replace(/[^a-z0-9-_]/g, '');
+  // The preview shows the exact folder the backend will create, not a local approximation.
+  $: scheduleSuggestion(branchInput.trim());
+
+  function scheduleSuggestion(branchName: string) {
+    const seq = ++suggestSeq;
+    if (suggestTimer) clearTimeout(suggestTimer);
+    if (!branchName) {
+      suggestedPath = '';
+      return;
+    }
+    suggestTimer = setTimeout(async () => {
+      try {
+        const res = await invoke<SuggestWorktreePathResult>('suggest_worktree_path', { repoPath, branchName });
+        if (seq === suggestSeq) suggestedPath = res.suggestedPath;
+      } catch {
+        // Preview only: the create call reports any real error.
+        if (seq === suggestSeq) suggestedPath = '';
+      }
+    }, SUGGEST_DEBOUNCE_MS);
   }
 
-  $: {
-    if (branchInput.trim()) {
-      const slug = sanitizeSlug(branchInput);
-      const parts = repoPath.replace(/\\/g, '/').split('/');
-      const repoName = parts[parts.length - 1] || 'repo';
-      suggestedPath = `${repoName}-${slug}`;
-    } else {
-      suggestedPath = '';
-    }
+  onDestroy(() => {
+    if (suggestTimer) clearTimeout(suggestTimer);
+  });
+
+  function folderName(fullPath: string): string {
+    const parts = fullPath.replace(/\\/g, '/').split('/');
+    return parts[parts.length - 1] || fullPath;
   }
 
   function handleFocus() {
@@ -57,6 +73,8 @@
       e.preventDefault();
       await submitCreate();
     } else if (e.key === 'Escape') {
+      // Consumed here: the panel-level Escape must not also hide the window.
+      e.preventDefault();
       branchInput = '';
       isExpanded = false;
       errorMessage = null;
@@ -97,6 +115,8 @@
         // Reset
         branchInput = '';
         isExpanded = false;
+      } else {
+        errorMessage = createRes.message || 'Worktree was not created';
       }
     } catch (err: unknown) {
       errorMessage = toErrorMessage(err, 'Failed to create worktree');
@@ -117,7 +137,7 @@
       {#if isCreating}
         <Loader2 size={12} class="text-indigo-400 animate-spin flex-shrink-0" />
       {:else}
-        <Plus size={12} class="text-neutral-500 flex-shrink-0" />
+        <Plus size={12} class="text-neutral-400 flex-shrink-0" />
       {/if}
 
       <input
@@ -128,12 +148,16 @@
         disabled={isCreating}
         type="text"
         placeholder="Quick branch name (e.g. feat/auth, fix/bug)... [Enter to create]"
+        aria-label="Quick new worktree branch name"
         class="bg-transparent text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none w-full font-mono"
       />
 
       {#if suggestedPath && !isCreating}
-        <span class="text-[10px] text-indigo-300 font-mono hidden md:inline-block bg-indigo-950/70 border border-indigo-800/50 px-1.5 py-0.2 rounded truncate max-w-[150px]">
-          📁 {suggestedPath}
+        <span
+          class="text-[11px] text-indigo-300 font-mono hidden md:inline-block bg-indigo-950/70 border border-indigo-800/50 px-1.5 py-0.2 rounded truncate max-w-[220px]"
+          title={`New branch from ${defaultBranch}, created at ${suggestedPath}`}
+        >
+          from {defaultBranch} → {folderName(suggestedPath)}
         </span>
       {/if}
     </div>
@@ -144,10 +168,10 @@
           type="button"
           on:click={submitCreate}
           title="Create worktree now (Enter)"
-          class="flex items-center gap-1 px-1.5 py-0.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-medium transition-colors"
+          class="flex items-center gap-1 px-2 min-h-6 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-medium transition-colors"
         >
           <span>Create</span>
-          <CornerDownLeft size={9} />
+          <CornerDownLeft size={10} />
         </button>
       {/if}
 
@@ -156,17 +180,18 @@
         type="button"
         on:click={() => dispatch('openAdvancedModal', repoPath)}
         title="Open Advanced Worktree Creator"
-        class="p-1 rounded hover:bg-neutral-800 text-neutral-500 hover:text-neutral-300 transition-colors"
+        aria-label="Open Advanced Worktree Creator"
+        class="min-w-6 min-h-6 flex items-center justify-center rounded hover:bg-neutral-800 text-neutral-400 hover:text-neutral-300 transition-colors"
       >
-        <Settings2 size={11} />
+        <Settings2 size={12} />
       </button>
     </div>
   </div>
 
   {#if errorMessage}
-    <div class="flex items-center gap-1 px-2 py-1 mt-1 rounded bg-rose-950/70 border border-rose-800/50 text-rose-300 text-[10px]">
-      <AlertCircle size={10} class="flex-shrink-0" />
-      <span class="truncate">{errorMessage}</span>
+    <div class="flex items-center gap-1 px-2 py-1 mt-1 rounded bg-rose-950/70 border border-rose-800/50 text-rose-300 text-[11px]" role="alert">
+      <AlertCircle size={11} class="flex-shrink-0" />
+      <span class="truncate" title={errorMessage}>{errorMessage}</span>
     </div>
   {/if}
 </div>

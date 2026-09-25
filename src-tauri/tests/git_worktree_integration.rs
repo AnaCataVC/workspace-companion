@@ -1,8 +1,6 @@
 use std::fs;
 use workspace_companion::services::git::GitService;
-use workspace_companion::services::worktree_cleaner::{
-    BatchDeleteTarget, WorktreeCleanerService,
-};
+use workspace_companion::services::worktree_cleaner::{BatchDeleteTarget, WorktreeCleanerService};
 use workspace_companion::services::BatchItemErrorKind;
 
 mod common;
@@ -19,13 +17,13 @@ fn test_real_worktree_creation_and_listing() {
     let wt_path_str = wt_path.to_str().unwrap();
 
     // 1. Create a real worktree via GitService
-    let create_res = GitService::create_worktree(
-        repo_path_str,
-        wt_path_str,
-        "main",
-        Some("feat/e2e-test"),
+    let create_res =
+        GitService::create_worktree(repo_path_str, wt_path_str, "main", Some("feat/e2e-test"));
+    assert!(
+        create_res.is_ok(),
+        "create_worktree failed: {:?}",
+        create_res.err()
     );
-    assert!(create_res.is_ok(), "create_worktree failed: {:?}", create_res.err());
 
     let res = create_res.unwrap();
     assert!(res.success, "Result should mark success: {}", res.message);
@@ -37,12 +35,19 @@ fn test_real_worktree_creation_and_listing() {
     let worktrees = GitService::parse_worktree_porcelain(&raw);
     assert_eq!(worktrees.len(), 2, "Should list exactly 2 worktrees");
 
-    let main_wt = worktrees.iter().find(|w| w.branch.as_deref() == Some("refs/heads/main"));
+    let main_wt = worktrees
+        .iter()
+        .find(|w| w.branch.as_deref() == Some("refs/heads/main"));
     assert!(main_wt.is_some(), "Main branch worktree should be present");
     assert!(!main_wt.unwrap().bare);
 
-    let feat_wt = worktrees.iter().find(|w| w.branch.as_deref() == Some("refs/heads/feat/e2e-test"));
-    assert!(feat_wt.is_some(), "Feature branch worktree should be present");
+    let feat_wt = worktrees
+        .iter()
+        .find(|w| w.branch.as_deref() == Some("refs/heads/feat/e2e-test"));
+    assert!(
+        feat_wt.is_some(),
+        "Feature branch worktree should be present"
+    );
     assert!(!feat_wt.unwrap().bare);
 }
 
@@ -56,12 +61,8 @@ fn test_dirty_worktree_safety_protection() {
     let wt_path = wt_temp.path().join("wt-dirty-protection");
     let wt_path_str = wt_path.to_str().unwrap();
 
-    GitService::create_worktree(
-        repo_path_str,
-        wt_path_str,
-        "main",
-        Some("feat/dirty-test"),
-    ).expect("create wt failed");
+    GitService::create_worktree(repo_path_str, wt_path_str, "main", Some("feat/dirty-test"))
+        .expect("create wt failed");
 
     // Add uncommitted / dirty files
     let secret_file = wt_path.join("uncommitted_work.txt");
@@ -70,16 +71,29 @@ fn test_dirty_worktree_safety_protection() {
     // Pre-flight check dirty status
     let (is_dirty, uncommitted_count) = GitService::check_dirty_status(&wt_path);
     assert!(is_dirty, "Worktree must be detected as dirty");
-    assert_eq!(uncommitted_count, 1, "Must detect exactly 1 uncommitted file");
+    assert_eq!(
+        uncommitted_count, 1,
+        "Must detect exactly 1 uncommitted file"
+    );
 
     // Attempt removal WITHOUT force -> MUST be blocked and preserve data
     let remove_err = WorktreeCleanerService::remove_worktree(repo_path, wt_path_str, false);
-    assert!(remove_err.is_err(), "remove_worktree must fail for dirty worktrees when force is false");
+    assert!(
+        remove_err.is_err(),
+        "remove_worktree must fail for dirty worktrees when force is false"
+    );
     let msg = remove_err.unwrap_err();
-    assert!(msg.contains("dirty") || msg.contains("uncommitted"), "Error message should cite dirty state: {}", msg);
+    assert!(
+        msg.contains("dirty") || msg.contains("uncommitted"),
+        "Error message should cite dirty state: {}",
+        msg
+    );
 
     // Verify critical file is still intact on disk
-    assert!(secret_file.exists(), "Dirty file must NOT be deleted when force is false");
+    assert!(
+        secret_file.exists(),
+        "Dirty file must NOT be deleted when force is false"
+    );
 }
 
 #[test]
@@ -98,12 +112,20 @@ fn test_worktree_removal_clean_and_forced() {
         wt_clean_str,
         "main",
         Some("feat/clean-remove"),
-    ).expect("create clean wt failed");
+    )
+    .expect("create clean wt failed");
     assert!(wt_clean_path.exists());
 
     let clean_res = WorktreeCleanerService::remove_worktree(repo_path, wt_clean_str, false);
-    assert!(clean_res.is_ok(), "Clean removal should succeed: {:?}", clean_res.err());
-    assert!(!wt_clean_path.exists(), "Clean worktree directory must be removed");
+    assert!(
+        clean_res.is_ok(),
+        "Clean removal should succeed: {:?}",
+        clean_res.err()
+    );
+    assert!(
+        !wt_clean_path.exists(),
+        "Clean worktree directory must be removed"
+    );
 
     // 2. Forced removal succeeds even if worktree contains uncommitted modifications
     let wt_forced_temp = tempfile::tempdir().expect("failed to create forced wt dir");
@@ -115,12 +137,20 @@ fn test_worktree_removal_clean_and_forced() {
         wt_forced_str,
         "main",
         Some("feat/forced-remove"),
-    ).expect("create forced wt failed");
+    )
+    .expect("create forced wt failed");
     fs::write(wt_forced_path.join("dirty_draft.ts"), "export const a = 1;").unwrap();
 
     let forced_res = WorktreeCleanerService::remove_worktree(repo_path, wt_forced_str, true);
-    assert!(forced_res.is_ok(), "Forced removal must succeed: {:?}", forced_res.err());
-    assert!(!wt_forced_path.exists(), "Worktree directory must be removed after force delete");
+    assert!(
+        forced_res.is_ok(),
+        "Forced removal must succeed: {:?}",
+        forced_res.err()
+    );
+    assert!(
+        !wt_forced_path.exists(),
+        "Worktree directory must be removed after force delete"
+    );
 }
 
 #[test]
@@ -139,34 +169,62 @@ fn test_orphan_detection_lifecycle() {
         wt_path_str,
         "main",
         Some("feat/merged-feature"),
-    ).expect("create wt failed");
+    )
+    .expect("create wt failed");
 
     // Add a commit on the feature branch worktree
     let feat_file = wt_path.join("feature.txt");
     fs::write(&feat_file, "New feature complete\n").expect("write feat file failed");
     run_git(&wt_path, &["add", "feature.txt"]).expect("add feat failed");
-    run_git(&wt_path, &["commit", "-m", "Complete feat/merged-feature"]).expect("commit feat failed");
+    run_git(&wt_path, &["commit", "-m", "Complete feat/merged-feature"])
+        .expect("commit feat failed");
 
     // Merge feature branch into main in the root repository
-    run_git(repo_path, &["merge", "feat/merged-feature", "--no-ff", "-m", "Merge feat/merged-feature into main"])
-        .expect("merge into main failed");
+    run_git(
+        repo_path,
+        &[
+            "merge",
+            "feat/merged-feature",
+            "--no-ff",
+            "-m",
+            "Merge feat/merged-feature into main",
+        ],
+    )
+    .expect("merge into main failed");
 
     // Scan repository via WorktreeCleanerService
     let repo_worktrees = WorktreeCleanerService::scan_repository(repo_path, None, None)
-        .expect("scan_repository failed");
+        .expect("scan_repository failed")
+        .expect("repository not detected");
 
     // Verify main worktree is protected from orphan status
-    let main_wt = repo_worktrees.worktrees.iter().find(|w| w.is_main).expect("main worktree not found");
-    assert!(!main_wt.is_orphaned, "Root repository worktree must never be marked as orphaned");
+    let main_wt = repo_worktrees
+        .worktrees
+        .iter()
+        .find(|w| w.is_main)
+        .expect("main worktree not found");
+    assert!(
+        !main_wt.is_orphaned,
+        "Root repository worktree must never be marked as orphaned"
+    );
 
     // Verify merged feature worktree is correctly detected as orphaned
-    let orphan_wt = repo_worktrees.worktrees.iter().find(|w| {
-        w.branch.as_deref() == Some("refs/heads/feat/merged-feature")
-    }).expect("merged feature worktree not found");
+    let orphan_wt = repo_worktrees
+        .worktrees
+        .iter()
+        .find(|w| w.branch.as_deref() == Some("refs/heads/feat/merged-feature"))
+        .expect("merged feature worktree not found");
 
-    assert!(orphan_wt.is_orphaned, "Merged worktree must be flagged as orphaned");
     assert!(
-        orphan_wt.orphan_reason.as_deref().unwrap_or("").contains("Merged into main"),
+        orphan_wt.is_orphaned,
+        "Merged worktree must be flagged as orphaned"
+    );
+    assert!(
+        orphan_wt
+            .orphan_reason
+            .as_deref()
+            .unwrap_or("")
+            .contains("Merged into main"),
         "Orphan reason should cite merged into main: {:?}",
         orphan_wt.orphan_reason
     );
@@ -200,8 +258,20 @@ fn test_batch_delete_skips_dirty_and_protects_main() {
     let wt_dirty = wt_temp2.path().join("wt-batch-dirty");
     let wt_dirty_str = wt_dirty.to_str().unwrap().to_string();
 
-    GitService::create_worktree(&repo_path_str, &wt_clean_str, "main", Some("feat/batch-clean")).unwrap();
-    GitService::create_worktree(&repo_path_str, &wt_dirty_str, "main", Some("feat/batch-dirty")).unwrap();
+    GitService::create_worktree(
+        &repo_path_str,
+        &wt_clean_str,
+        "main",
+        Some("feat/batch-clean"),
+    )
+    .unwrap();
+    GitService::create_worktree(
+        &repo_path_str,
+        &wt_dirty_str,
+        "main",
+        Some("feat/batch-dirty"),
+    )
+    .unwrap();
 
     fs::write(wt_dirty.join("unsaved.txt"), "precious changes").unwrap();
 
@@ -242,8 +312,14 @@ fn test_batch_delete_skips_dirty_and_protects_main() {
 
     let summary = WorktreeCleanerService::remove_worktrees_batch(targets);
     assert_eq!(summary.total_requested, 4);
-    assert_eq!(summary.deleted_count, 1, "Only the clean worktree should be deleted");
-    assert_eq!(summary.skipped_count, 2, "Main repo and dirty worktree must be skipped");
+    assert_eq!(
+        summary.deleted_count, 1,
+        "Only the clean worktree should be deleted"
+    );
+    assert_eq!(
+        summary.skipped_count, 2,
+        "Main repo and dirty worktree must be skipped"
+    );
     assert!(!wt_clean.exists(), "Clean worktree must be deleted");
     assert!(wt_dirty.exists(), "Dirty worktree must remain on disk");
     assert!(repo_path.exists(), "Root repo must remain on disk");
@@ -279,5 +355,147 @@ fn test_batch_delete_skips_dirty_and_protects_main() {
         bogus_err.kind,
         BatchItemErrorKind::Failed,
         "a git call that genuinely failed must not be reported as a skip"
+    );
+}
+
+/// Creates a linked worktree under `<repo>/.claude/worktrees/<name>` and then deletes its `.git`
+/// file, leaving a directory git can no longer validate as a working tree.
+fn create_unlinked_claude_worktree(repo_path: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let wt_path = repo_path.join(".claude").join("worktrees").join(name);
+    GitService::create_worktree(
+        repo_path.to_str().unwrap(),
+        wt_path.to_str().unwrap(),
+        "main",
+        Some(&format!("feat/{}", name)),
+    )
+    .expect("create .claude worktree failed");
+    fs::remove_file(wt_path.join(".git")).expect("remove .git file failed");
+    wt_path
+}
+
+fn is_registered(repo_path: &std::path::Path, wt_path: &std::path::Path) -> bool {
+    let wt_name = wt_path.file_name().unwrap().to_string_lossy().to_string();
+    run_git(repo_path, &["worktree", "list", "--porcelain"])
+        .unwrap()
+        .lines()
+        .any(|l| l.starts_with("worktree ") && l.ends_with(&wt_name))
+}
+
+#[test]
+fn test_remove_unlinked_worktree_directory() {
+    let repo_temp = create_test_repo();
+    let repo_path = repo_temp.path();
+
+    // Registered-but-prunable entry whose `.git` file is gone: `git worktree remove` fails here.
+    let wt_path = create_unlinked_claude_worktree(repo_path, "prunable");
+    let wt_str = wt_path.to_str().unwrap();
+
+    // Without force the directory's contents cannot be verified by git, so it must be kept.
+    let refused = WorktreeCleanerService::remove_worktree(repo_path, wt_str, false);
+    assert!(
+        refused.is_err(),
+        "Unverifiable directory must not be deleted without force"
+    );
+    assert!(refused
+        .unwrap_err()
+        .contains("not a registered git worktree"));
+    assert!(
+        wt_path.exists(),
+        "Directory must be preserved when removal is refused"
+    );
+
+    let forced = WorktreeCleanerService::remove_worktree(repo_path, wt_str, true);
+    assert!(
+        forced.is_ok(),
+        "Forced removal of unlinked worktree must succeed: {:?}",
+        forced.err()
+    );
+    assert!(
+        !wt_path.exists(),
+        "Unlinked worktree directory must be deleted"
+    );
+    assert!(
+        !is_registered(repo_path, &wt_path),
+        "Stale registration must be pruned"
+    );
+
+    // Already-pruned leftover (git answers "is not a working tree") that is empty: nothing to lose.
+    let empty_path = create_unlinked_claude_worktree(repo_path, "empty-leftover");
+    run_git(repo_path, &["worktree", "prune"]).unwrap();
+    fs::remove_dir_all(&empty_path).unwrap();
+    fs::create_dir_all(&empty_path).unwrap();
+    let empty_res =
+        WorktreeCleanerService::remove_worktree(repo_path, empty_path.to_str().unwrap(), false);
+    assert!(
+        empty_res.is_ok(),
+        "Empty leftover must be removed: {:?}",
+        empty_res.err()
+    );
+    assert!(!empty_path.exists());
+
+    // The main repository must never be touched by the fallback.
+    assert!(repo_path.join("README.md").exists());
+}
+
+#[test]
+fn test_batch_remove_pruned_leftover_directory() {
+    let repo_temp = create_test_repo();
+    let repo_path = repo_temp.path();
+    let repo_str = repo_path.to_str().unwrap().to_string();
+
+    let wt_path = create_unlinked_claude_worktree(repo_path, "pruned");
+    run_git(repo_path, &["worktree", "prune"]).unwrap();
+    assert!(!is_registered(repo_path, &wt_path));
+
+    let summary = WorktreeCleanerService::remove_worktrees_batch(vec![BatchDeleteTarget {
+        repo_path: repo_str.clone(),
+        worktree_path: wt_path.to_str().unwrap().to_string(),
+        force: false,
+    }]);
+    assert_eq!(summary.deleted_count, 0);
+    assert_eq!(summary.skipped_count, 1);
+    assert!(matches!(
+        summary.errors[0].kind,
+        BatchItemErrorKind::Skipped
+    ));
+    assert!(wt_path.exists());
+
+    let summary = WorktreeCleanerService::remove_worktrees_batch(vec![BatchDeleteTarget {
+        repo_path: repo_str,
+        worktree_path: wt_path.to_str().unwrap().to_string(),
+        force: true,
+    }]);
+    assert_eq!(summary.deleted_count, 1, "errors: {:?}", summary.errors);
+    assert!(!wt_path.exists());
+}
+
+#[test]
+fn test_detach_worktree_head() {
+    let repo_temp = create_test_repo();
+    let repo_path = repo_temp.path();
+    let wt_temp = tempfile::tempdir().unwrap();
+    let wt_path = wt_temp.path().join("wt-detach");
+    let wt_str = wt_path.to_str().unwrap();
+    GitService::create_worktree(
+        repo_path.to_str().unwrap(),
+        wt_str,
+        "main",
+        Some("feat/detach"),
+    )
+    .expect("create wt failed");
+
+    fs::write(wt_path.join("draft.txt"), "wip").unwrap();
+    let refused = GitService::detach_worktree_head(wt_str);
+    assert!(refused.is_err(), "Dirty worktree must not be detached");
+    assert_eq!(
+        run_git(&wt_path, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap(),
+        "feat/detach"
+    );
+
+    fs::remove_file(wt_path.join("draft.txt")).unwrap();
+    GitService::detach_worktree_head(wt_str).expect("clean detach must succeed");
+    assert_eq!(
+        run_git(&wt_path, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap(),
+        "HEAD"
     );
 }

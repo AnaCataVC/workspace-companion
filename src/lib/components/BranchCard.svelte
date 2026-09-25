@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { BranchStatusEntry } from '../types';
-  import { GitBranch, Lock, FolderGit2, FolderSymlink, GitBranchPlus } from 'lucide-svelte';
+  import { GitBranch, Lock, FolderGit2, FolderSymlink, GitBranchPlus, Unlock } from 'lucide-svelte';
   import { branchSelection, selectedBranchKeys, branchSelectionKey } from '../stores/branchSelection';
   import { branchProtectionReason } from '../utils/protectionReason';
   import BranchStatusBadges from './BranchStatusBadges.svelte';
@@ -10,14 +10,17 @@
   export let repoName: string = '';
 
   /*
-   * Deliberately has no delete button, unlike WorktreeCard: branch deletion is batch-only, so the
-   * only destructive path stays the reviewed batch flow. Do not port WorktreeCard's action row.
+   * Deliberately has no batch-style delete button, unlike WorktreeCard: ordinary branch deletion
+   * is batch-only, so the only destructive path stays the reviewed batch flow. The one exception
+   * is "Release", since a checked-out branch can never be selected for that batch flow at all.
    */
   const dispatch = createEventDispatcher<{
     requestCheckout: BranchStatusEntry;
+    requestRelease: BranchStatusEntry;
   }>();
 
   $: isProtected = branch.isDefault || branch.isCheckedOut;
+  $: isReleasable = branch.isCheckedOut && !branch.isDefault;
   $: isSelected = $selectedBranchKeys.has(branchSelectionKey({ repoPath: branch.repoPath, branchName: branch.name }));
   $: hasWorktree = Boolean(branch.checkedOutWorktreePath);
 
@@ -50,8 +53,17 @@
           title="Select branch for batch delete"
           class="w-3.5 h-3.5 rounded border-neutral-700 bg-neutral-950 text-rose-500 focus:ring-rose-500/30 focus:ring-offset-0 cursor-pointer flex-shrink-0"
         />
+      {:else if isReleasable}
+        <button
+          type="button"
+          on:click={() => dispatch('requestRelease', branch)}
+          title={`${branchProtectionReason(branch)} — release to delete it`}
+          class="w-3.5 h-3.5 flex items-center justify-center text-amber-400 hover:text-amber-300 flex-shrink-0"
+        >
+          <Unlock size={10} />
+        </button>
       {:else}
-        <span title={branchProtectionReason(branch)} class="w-3.5 h-3.5 flex items-center justify-center text-neutral-600 flex-shrink-0">
+        <span title={branchProtectionReason(branch)} class="w-3.5 h-3.5 flex items-center justify-center text-neutral-400 flex-shrink-0">
           <Lock size={10} />
         </span>
       {/if}
@@ -68,12 +80,12 @@
   <!-- Repository and last commit info -->
   <div class="flex items-center justify-between text-neutral-400 text-[11px]">
     <div class="flex items-center gap-1 truncate max-w-[260px]" title={branch.repoPath}>
-      <FolderGit2 size={11} class="text-neutral-500 flex-shrink-0" />
+      <FolderGit2 size={11} class="text-neutral-400 flex-shrink-0" />
       <span class="truncate">{repoName || branch.repoPath}</span>
     </div>
 
     {#if branch.lastCommitSha}
-      <span class="font-mono text-[10px] text-neutral-500">
+      <span class="font-mono text-[11px] text-neutral-400">
         {branch.lastCommitSha}
       </span>
     {/if}
@@ -85,14 +97,25 @@
     </p>
   {/if}
 
-  <div class="flex items-center justify-end pt-1 border-t border-neutral-800/50 opacity-85 group-hover:opacity-100 transition-opacity">
+  <div class="flex items-center justify-end gap-1.5 pt-1 border-t border-neutral-800/50 opacity-85 group-hover:opacity-100 transition-opacity">
+    {#if isReleasable}
+      <button
+        type="button"
+        on:click={() => dispatch('requestRelease', branch)}
+        title="Free this branch from its worktree and delete it"
+        class="px-2 py-1 rounded bg-neutral-800/80 hover:bg-amber-950/80 border border-neutral-700/60 hover:border-amber-700/60 text-neutral-300 hover:text-amber-300 flex items-center gap-1.5 transition-colors text-[11px]"
+      >
+        <Unlock size={12} />
+        <span>Release</span>
+      </button>
+    {/if}
     <button
       type="button"
       on:click={() => dispatch('requestCheckout', branch)}
       title={hasWorktree
         ? `Go to the worktree at ${branch.checkedOutWorktreePath}`
         : 'Create a worktree that checks out this branch'}
-      class="px-2 py-1 rounded bg-neutral-800/80 hover:bg-indigo-950/80 border border-neutral-700/60 hover:border-indigo-700/60 text-neutral-300 hover:text-indigo-300 flex items-center gap-1.5 transition-colors text-[10px]"
+      class="px-2 py-1 rounded bg-neutral-800/80 hover:bg-indigo-950/80 border border-neutral-700/60 hover:border-indigo-700/60 text-neutral-300 hover:text-indigo-300 flex items-center gap-1.5 transition-colors text-[11px]"
     >
       {#if hasWorktree}
         <FolderSymlink size={12} />

@@ -1,5 +1,5 @@
 import { derived, writable } from 'svelte/store';
-import type { RepositoryWorktrees } from '../types';
+import type { RepositoryWorktrees, WorktreeInfo } from '../types';
 import { selectedAccountFilter, selectedStatusFilter } from './appConfig';
 
 export const scannedRepos = writable<RepositoryWorktrees[]>([]);
@@ -7,6 +7,16 @@ export const isScanning = writable<boolean>(false);
 export const searchFilter = writable<string>('');
 export const isPinned = writable<boolean>(false);
 export const scanError = writable<string | null>(null);
+
+/** Whether a worktree matches the search box; `query` must already be lowercased and trimmed. */
+export function worktreeMatchesSearch(wt: WorktreeInfo, query: string): boolean {
+  if (!query) return true;
+  return Boolean(
+    (wt.branch && wt.branch.toLowerCase().includes(query)) ||
+      wt.path.toLowerCase().includes(query) ||
+      (wt.lastCommitMessage && wt.lastCommitMessage.toLowerCase().includes(query))
+  );
+}
 
 /**
  * The repositories and worktrees the Worktrees view is actually showing. Derived here rather than
@@ -40,12 +50,7 @@ export const filteredRepos = derived(
           if ($status === 'ORPHANS' && (wt.isMain || !wt.isOrphaned)) return false;
           if ($status === 'CLEAN' && wt.isDirty) return false;
 
-          if (!q) return true;
-          return (
-            (wt.branch && wt.branch.toLowerCase().includes(q)) ||
-            wt.path.toLowerCase().includes(q) ||
-            (wt.lastCommitMessage && wt.lastCommitMessage.toLowerCase().includes(q))
-          );
+          return worktreeMatchesSearch(wt, q);
         });
 
         return {
@@ -58,3 +63,9 @@ export const filteredRepos = derived(
 
 /** Worktree the user asked to be taken to (from the Branches view); cleared on view change. */
 export const highlightedWorktreePath = writable<string | null>(null);
+
+/**
+ * Counts open per-card interactive popovers (e.g. the discard-changes confirmation) so the panel
+ * can stay visible on blur while one is open, the same way the app's modals hold `isAnyModalOpen`.
+ */
+export const openWorktreeActionCount = writable<number>(0);

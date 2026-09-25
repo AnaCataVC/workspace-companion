@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { filteredRepos, searchFilter } from '../stores/worktrees';
+  import { filteredRepos, isScanning, searchFilter } from '../stores/worktrees';
   import { appConfig, selectedAccountFilter, selectedStatusFilter, viewDensity } from '../stores/appConfig';
   import { activeGhAccount } from '../stores/ghAuth';
   import { batchSelection, selectedPaths } from '../stores/batchSelection';
@@ -16,6 +16,7 @@
     openTerminal: { terminal: SupportedTerminal; path: string };
     requestSwitchBranch: { worktree: WorktreeInfo; repoPath: string };
     requestDelete: { worktree: WorktreeInfo; repoPath: string };
+    worktreeDiscarded: { worktree: WorktreeInfo; repoPath: string };
     cleanAllOrphans: string; // repoPath
     newWorktreeForRepo: string; // repoPath
     switchGhAccount: string; // username
@@ -61,8 +62,18 @@
 </script>
 
 <div class="flex-1 overflow-y-auto p-3 space-y-3 custom-scroll">
-  {#if $filteredRepos.length === 0}
-    <div class="flex flex-col items-center justify-center h-48 text-neutral-500 gap-2 select-none">
+  {#if $filteredRepos.length === 0 && $isScanning}
+    <!-- Skeleton while the first results stream in, instead of a misleading "nothing found". -->
+    <div class="space-y-3 animate-pulse" aria-busy="true" aria-label="Scanning repositories">
+      {#each [0, 1, 2] as placeholder (placeholder)}
+        <div class="rounded-xl border border-neutral-800 bg-neutral-900/60 p-3 space-y-2">
+          <div class="h-3 w-40 rounded bg-neutral-800"></div>
+          <div class="h-10 rounded bg-neutral-800/70"></div>
+        </div>
+      {/each}
+    </div>
+  {:else if $filteredRepos.length === 0}
+    <div class="flex flex-col items-center justify-center h-48 text-neutral-400 gap-2 select-none">
       {#if $searchFilter || $selectedStatusFilter !== 'ALL' || $selectedAccountFilter !== 'ALL'}
         <p class="text-xs">No repositories match your active filter criteria.</p>
         <button
@@ -113,14 +124,14 @@
               {repo.repoName}
             </span>
 
-            <span class="px-1.5 py-0.2 rounded-full bg-neutral-800 text-[10px] text-neutral-400 font-mono">
+            <span class="px-1.5 py-0.2 rounded-full bg-neutral-800 text-[11px] text-neutral-400 font-mono">
               {repo.worktrees.length}
             </span>
 
             <!-- Associated Account Badge -->
             {#if repo.associatedAccount}
               <span
-                class="px-1.5 py-0.2 rounded bg-neutral-800/90 text-neutral-400 border border-neutral-700/40 text-[9px] font-mono flex items-center gap-1"
+                class="px-1.5 py-0.2 rounded bg-neutral-800/90 text-neutral-400 border border-neutral-700/40 text-[11px] font-mono flex items-center gap-1"
                 title={`Associated with GitHub Account @${repo.associatedAccount}`}
               >
                 <Github size={9} class="text-neutral-400" />
@@ -132,7 +143,7 @@
                   type="button"
                   on:click={() => dispatch('switchGhAccount', repo.associatedAccount || '')}
                   title={`Switch GitHub CLI to @${repo.associatedAccount}`}
-                  class="px-1.5 py-0.2 rounded bg-amber-950/60 hover:bg-amber-900/80 text-amber-300 border border-amber-800/50 text-[9px] font-mono flex items-center gap-0.5 transition-colors"
+                  class="px-1.5 py-0.2 rounded bg-amber-950/60 hover:bg-amber-900/80 text-amber-300 border border-amber-800/50 text-[11px] font-mono flex items-center gap-0.5 transition-colors"
                 >
                   <Zap size={9} />
                   <span>Switch CLI</span>
@@ -148,7 +159,7 @@
                 type="button"
                 on:click={() => toggleSelectRepo(repo)}
                 title={allSelected ? "Deselect all secondary worktrees in this repo" : "Select all secondary worktrees in this repo"}
-                class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors
+                class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] transition-colors
                   {allSelected
                     ? 'bg-rose-950/60 text-rose-300 border border-rose-800/50 hover:bg-rose-900/70'
                     : 'bg-neutral-850 hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 border border-neutral-750'}"
@@ -167,7 +178,7 @@
               <button
                 type="button"
                 on:click={() => dispatch('cleanAllOrphans', repo.repoPath)}
-                class="flex items-center gap-1 px-2 py-0.5 rounded bg-amber-950/60 hover:bg-amber-900/80 text-amber-300 border border-amber-800/40 text-[10px] transition-colors"
+                class="flex items-center gap-1 px-2 py-0.5 rounded bg-amber-950/60 hover:bg-amber-900/80 text-amber-300 border border-amber-800/40 text-[11px] transition-colors"
               >
                 <Sparkles size={10} />
                 Clean {orphanCount} orphans
@@ -190,6 +201,7 @@
                 on:openTerminal={(e) => dispatch('openTerminal', e.detail)}
                 on:requestSwitchBranch={(e) => dispatch('requestSwitchBranch', e.detail)}
                 on:requestDelete={(e) => dispatch('requestDelete', { worktree: e.detail, repoPath: repo.repoPath })}
+                on:worktreeDiscarded={(e) => dispatch('worktreeDiscarded', { worktree: e.detail, repoPath: repo.repoPath })}
               />
             {/each}
           </div>
@@ -205,6 +217,7 @@
                 on:openTerminal={(e) => dispatch('openTerminal', e.detail)}
                 on:requestSwitchBranch={(e) => dispatch('requestSwitchBranch', e.detail)}
                 on:requestDelete={(e) => dispatch('requestDelete', { worktree: e.detail, repoPath: repo.repoPath })}
+                on:worktreeDiscarded={(e) => dispatch('worktreeDiscarded', { worktree: e.detail, repoPath: repo.repoPath })}
               />
             {/each}
           </div>

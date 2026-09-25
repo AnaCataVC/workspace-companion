@@ -1019,6 +1019,24 @@ impl GitService {
         })
     }
 
+    /// Detaches HEAD in the given worktree (freeing its branch) after pre-flight dirty verification.
+    pub fn detach_worktree_head(worktree_path: &str) -> Result<(), String> {
+        let wt_path = Path::new(worktree_path);
+        if !wt_path.exists() {
+            return Err(format!("Worktree path does not exist: {}", worktree_path));
+        }
+
+        let (is_dirty, count) = Self::check_dirty_status(wt_path);
+        if is_dirty {
+            return Err(format!(
+                "Cannot detach HEAD: {} uncommitted or modified files detected. Please stash or commit changes first.",
+                count
+            ));
+        }
+
+        Self::run_git(wt_path, &["checkout", "--detach"]).map(|_| ())
+    }
+
     /// Stashes uncommitted and untracked changes in the given worktree.
     pub fn stash_worktree<P: AsRef<Path>>(
         worktree_path: P,
@@ -1099,6 +1117,17 @@ impl GitService {
         })
     }
 
+    /// Whether `git worktree add` would refuse this target: an existing file, or a directory
+    /// that is not empty. A missing or empty directory is a valid target.
+    pub fn is_occupied_target(target: &Path) -> bool {
+        if target.is_file() {
+            return true;
+        }
+        std::fs::read_dir(target)
+            .map(|mut entries| entries.next().is_some())
+            .unwrap_or(false)
+    }
+
     /// Creates a new worktree with either a new branch or an existing branch.
     pub fn create_worktree<P: AsRef<Path>>(
         repo_path: P,
@@ -1109,15 +1138,11 @@ impl GitService {
         let repo_root = repo_path.as_ref();
         let target_dir = Path::new(target_path);
 
-        if target_dir.exists() {
-            if let Ok(mut entries) = std::fs::read_dir(target_dir) {
-                if entries.next().is_some() {
-                    return Err(format!(
-                        "Target path '{}' already exists and is not empty.",
-                        target_path
-                    ));
-                }
-            }
+        if Self::is_occupied_target(target_dir) {
+            return Err(format!(
+                "Target path '{}' already exists and is not empty.",
+                target_path
+            ));
         }
 
         let branch_created = if let Some(new_branch) = new_branch_name {
@@ -1158,6 +1183,19 @@ impl GitService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_is_occupied_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing");
+        assert!(!GitService::is_occupied_target(&missing));
+        assert!(!GitService::is_occupied_target(dir.path()));
+
+        let file = dir.path().join("file.txt");
+        std::fs::write(&file, "x").unwrap();
+        assert!(GitService::is_occupied_target(&file));
+        assert!(GitService::is_occupied_target(dir.path()));
+    }
 
     #[test]
     fn test_parse_worktree_porcelain() {

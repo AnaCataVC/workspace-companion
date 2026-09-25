@@ -68,6 +68,22 @@ export interface WorktreeDiffSummary {
   modifiedFiles: string[];
 }
 
+/** Payloads of the `scan_worktrees` events; `scanId` identifies the refresh that emitted them. */
+export interface RepoScannedEvent {
+  scanId: number;
+  repo: RepositoryWorktrees;
+}
+
+export interface RepoScanFailedEvent {
+  scanId: number;
+  repoPath: string;
+  error: string;
+}
+
+export interface ScanCompleteEvent {
+  scanId: number;
+}
+
 export interface RepositoryWorktrees {
   repoPath: string;
   repoName: string;
@@ -116,6 +132,8 @@ export interface AppConfig {
   defaultEditor: SupportedEditor;
   defaultTerminal: SupportedTerminal;
   showTerminalButton: boolean;
+  /** Absent in configs saved before pinning was persisted; treat as false. */
+  isPinned?: boolean;
 }
 
 export interface BranchEntry {

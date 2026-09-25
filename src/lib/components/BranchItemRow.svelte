@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { BranchStatusEntry } from '../types';
-  import { GitBranch, Lock, FolderSymlink, GitBranchPlus } from 'lucide-svelte';
+  import { GitBranch, Lock, FolderSymlink, GitBranchPlus, Unlock } from 'lucide-svelte';
   import { branchSelection, selectedBranchKeys, branchSelectionKey } from '../stores/branchSelection';
   import { branchProtectionReason } from '../utils/protectionReason';
   import BranchStatusBadges from './BranchStatusBadges.svelte';
@@ -11,9 +11,11 @@
 
   const dispatch = createEventDispatcher<{
     requestCheckout: BranchStatusEntry;
+    requestRelease: BranchStatusEntry;
   }>();
 
   $: isProtected = branch.isDefault || branch.isCheckedOut;
+  $: isReleasable = branch.isCheckedOut && !branch.isDefault;
   $: isSelected = $selectedBranchKeys.has(branchSelectionKey({ repoPath: branch.repoPath, branchName: branch.name }));
   $: hasWorktree = Boolean(branch.checkedOutWorktreePath);
 
@@ -48,25 +50,34 @@
         title="Select branch for batch delete"
         class="w-3.5 h-3.5 rounded border-neutral-700 bg-neutral-950 text-rose-500 focus:ring-rose-500/30 focus:ring-offset-0 cursor-pointer flex-shrink-0"
       />
+    {:else if isReleasable}
+      <button
+        type="button"
+        on:click={() => dispatch('requestRelease', branch)}
+        title={`${branchProtectionReason(branch)} — release to delete it`}
+        class="w-3.5 h-3.5 flex items-center justify-center text-amber-400 hover:text-amber-300 flex-shrink-0"
+      >
+        <Unlock size={10} />
+      </button>
     {:else}
-      <span title={branchProtectionReason(branch)} class="w-3.5 h-3.5 flex items-center justify-center text-neutral-600 flex-shrink-0">
+      <span title={branchProtectionReason(branch)} class="w-3.5 h-3.5 flex items-center justify-center text-neutral-400 flex-shrink-0">
         <Lock size={10} />
       </span>
     {/if}
 
-    <GitBranch size={11} class="text-neutral-500 flex-shrink-0" />
+    <GitBranch size={11} class="text-neutral-400 flex-shrink-0" />
     <span class="font-mono font-medium truncate text-[11px] text-neutral-200" title={branch.name}>
       {branch.name}
     </span>
 
     {#if repoName}
-      <span class="text-neutral-500 text-[10px] truncate max-w-[110px]" title={branch.repoPath}>
+      <span class="text-neutral-400 text-[11px] truncate max-w-[110px]" title={branch.repoPath}>
         ({repoName})
       </span>
     {/if}
 
     {#if branch.lastCommitMessage}
-      <span class="text-neutral-600 text-[10px] truncate hidden sm:inline-block" title={branch.lastCommitMessage}>
+      <span class="text-neutral-400 text-[11px] truncate hidden sm:inline-block" title={branch.lastCommitMessage}>
         {branch.lastCommitMessage}
       </span>
     {/if}
@@ -81,7 +92,7 @@
       title={hasWorktree
         ? `Go to the worktree at ${branch.checkedOutWorktreePath}`
         : 'Create a worktree that checks out this branch'}
-      class="p-1 rounded hover:bg-indigo-950/80 text-neutral-500 hover:text-indigo-300 border border-transparent hover:border-indigo-900/50 transition-colors"
+      class="p-1 rounded hover:bg-indigo-950/80 text-neutral-400 hover:text-indigo-300 border border-transparent hover:border-indigo-900/50 transition-colors"
     >
       {#if hasWorktree}
         <FolderSymlink size={12} />

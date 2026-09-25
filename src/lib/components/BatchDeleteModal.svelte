@@ -3,6 +3,7 @@
   import { Trash2, X, ShieldAlert, CheckCircle2, Flame, GitBranch, Unlock, Loader2 } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
   import { closeOnEscape } from '../actions/closeOnEscape';
+  import { autofocus } from '../actions/autofocus';
   import { forceBatchWorktreeDelete } from '../stores/forceDeleteIntent';
   import { worktreeProtectionReason } from '../utils/protectionReason';
   import { invoke } from '@tauri-apps/api/core';
@@ -13,6 +14,8 @@
   export let isDeleting: boolean = false;
   export let summary: BatchDeleteSummary | null = null;
   export let errorMessage: string | null = null;
+  /** Paths the current filter shows; selected targets outside it are flagged as hidden. */
+  export let visiblePaths: Set<string> = new Set();
 
   const dispatch = createEventDispatcher<{
     close: void;
@@ -30,6 +33,7 @@
   let forceConfirmText: string = '';
   let lastTargetsKey: string = '';
 
+  $: hiddenCount = targets.filter((t) => !visiblePaths.has(t.worktreePath)).length;
   $: hasDirty = targets.some((t) => Boolean(t.isDirty));
   $: dirtyTargets = targets.filter((t) => Boolean(t.isDirty));
   $: dirtyCount = dirtyTargets.length;
@@ -128,7 +132,8 @@
 <svelte:window use:closeOnEscape={{ enabled: () => isOpen, onClose: close }} />
 
 {#if isOpen}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-100 select-none">
+  <div
+    use:autofocus class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-100 select-none">
     <div class="w-full max-w-md bg-neutral-900 border border-neutral-800 rounded-xl p-4 shadow-2xl flex flex-col gap-3 max-h-[85vh]">
       <!-- Header -->
       <div class="flex items-center justify-between border-b border-neutral-800 pb-2">
@@ -139,7 +144,7 @@
           </h2>
         </div>
         {#if !isDeleting}
-          <button on:click={close} class="text-neutral-500 hover:text-neutral-300 p-1 rounded transition-colors">
+          <button on:click={close} class="text-neutral-400 hover:text-neutral-300 p-1.5 rounded transition-colors" aria-label="Close">
             <X size={14} />
           </button>
         {/if}
@@ -166,10 +171,10 @@
 
           {#if summary.errors && summary.errors.length > 0}
             <div class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-              <span class="text-[10px] uppercase font-semibold text-rose-400">Reported issues:</span>
+              <span class="text-[11px] uppercase font-semibold text-rose-400">Reported issues:</span>
               {#each summary.errors as err}
                 <div
-                  class="p-2 rounded border text-[10px] font-mono
+                  class="p-2 rounded border text-[11px] font-mono
                     {err.kind === 'skipped'
                       ? 'bg-amber-950/50 border-amber-900/40 text-amber-200'
                       : 'bg-rose-950/50 border-rose-900/40 text-rose-200'}"
@@ -182,12 +187,12 @@
 
                   {#if isLockedError(err.error)}
                     <div class="mt-1.5 flex items-center justify-between pt-1.5 border-t border-rose-900/40">
-                      <span class="text-[10px] text-rose-300 font-sans">Locked by process or external agent</span>
+                      <span class="text-[11px] text-rose-300 font-sans">Locked by process or external agent</span>
                       <button
                         type="button"
                         disabled={unlockingPaths.has(err.worktreePath)}
                         on:click={() => handleUnlockAndRetry(err.worktreePath)}
-                        class="px-2 py-0.5 rounded bg-rose-800 hover:bg-rose-700 text-white font-sans text-[10px] font-medium transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        class="px-2 py-0.5 rounded bg-rose-800 hover:bg-rose-700 text-white font-sans text-[11px] font-medium transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
                         title="Run git worktree unlock and force remove"
                       >
                         {#if unlockingPaths.has(err.worktreePath)}
@@ -221,6 +226,11 @@
           <p class="text-xs text-neutral-300">
             You are about to remove <span class="font-bold text-white">{targets.length}</span> worktree(s):
           </p>
+          {#if hiddenCount > 0}
+            <p class="text-[11px] text-amber-300">
+              {hiddenCount} of them {hiddenCount === 1 ? 'is' : 'are'} hidden by the current filter or search.
+            </p>
+          {/if}
 
           <!-- List of selected worktrees -->
           <div class="max-h-52 overflow-y-auto space-y-1 bg-neutral-950/70 p-2 rounded-lg border border-neutral-850 no-scrollbar">
@@ -232,16 +242,21 @@
                     {getShortBranch(wt.branch)}
                   </span>
                   {#if wt.repoName}
-                    <span class="text-neutral-500 text-[10px] truncate max-w-[90px]" title={wt.repoPath}>
+                    <span class="text-neutral-400 text-[11px] truncate max-w-[90px]" title={wt.repoPath}>
                       ({wt.repoName})
                     </span>
                   {/if}
                 </div>
 
                 <div class="flex items-center gap-1 flex-shrink-0">
+                  {#if !visiblePaths.has(wt.worktreePath)}
+                    <span class="px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-800 text-[11px]" title="Selected earlier, not shown by the current filter">
+                      hidden
+                    </span>
+                  {/if}
                   {#if wt.isDirty}
                     <span
-                      class="px-1.5 py-0.2 rounded bg-rose-950 text-rose-300 border border-rose-800 text-[9px] flex items-center gap-0.5"
+                      class="px-1.5 py-0.2 rounded bg-rose-950 text-rose-300 border border-rose-800 text-[11px] flex items-center gap-0.5"
                       title={worktreeProtectionReason(wt)}
                     >
                       <Flame size={9} class="text-rose-400" />
@@ -261,7 +276,7 @@
                 <p class="font-semibold text-rose-200 text-[11px]">
                   {dirtyCount} worktree(s) have uncommitted local changes
                 </p>
-                <p class="text-rose-300/80 text-[10px] mt-0.5">
+                <p class="text-rose-300/80 text-[11px] mt-0.5">
                   Removing dirty worktrees without forcing will skip them to protect your work.
                 </p>
               </div>
@@ -279,12 +294,12 @@
             {#if $forceBatchWorktreeDelete}
               <div class="p-2.5 rounded-lg bg-rose-950/70 border border-rose-700/70 flex flex-col gap-2">
                 <p class="text-[11px] font-semibold text-rose-100">This cannot be undone</p>
-                <div class="max-h-24 overflow-y-auto space-y-0.5 text-[10px] text-rose-200/90 font-mono no-scrollbar">
+                <div class="max-h-24 overflow-y-auto space-y-0.5 text-[11px] text-rose-200/90 font-mono no-scrollbar">
                   {#each dirtyTargets as wt (wt.worktreePath)}
                     <p class="break-all">{getShortBranch(wt.branch)} — {worktreeProtectionReason(wt)}</p>
                   {/each}
                 </div>
-                <label for="batch-delete-force-confirm" class="text-[10px] text-rose-200">
+                <label for="batch-delete-force-confirm" class="text-[11px] text-rose-200">
                   Type <span class="font-mono font-bold text-rose-100">{FORCE_KEYWORD}</span> to confirm
                 </label>
                 <input

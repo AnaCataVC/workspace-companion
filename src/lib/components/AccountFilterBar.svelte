@@ -1,45 +1,50 @@
 <script lang="ts">
   import { selectedAccountFilter, selectedStatusFilter } from '../stores/appConfig';
-  import { scannedRepos, filteredRepos } from '../stores/worktrees';
+  import { scannedRepos, filteredRepos, searchFilter, worktreeMatchesSearch } from '../stores/worktrees';
   import { ghAccounts } from '../stores/ghAuth';
   import { batchSelection, selectedPaths } from '../stores/batchSelection';
   import type { StatusFilterType, BatchDeleteTarget } from '../types';
   import { Github, Layers, Flame, GitFork, AlertTriangle, CheckCircle2, CheckSquare, Square } from 'lucide-svelte';
 
-  $: allCount = $scannedRepos.length;
+  // Every count is a number of worktrees (what the list renders), after the search box is applied,
+  // so a pill's number always matches what clicking it shows.
+  $: searchQuery = $searchFilter.toLowerCase().trim();
+  $: searchedRepos = $scannedRepos.map((repo) => ({
+    ...repo,
+    worktrees: repo.worktrees.filter((wt) => worktreeMatchesSearch(wt, searchQuery))
+  }));
 
-  // Extract unique accounts from accounts store and scanned repos
-  $: accounts = Array.from(
-    new Set([
-      ...$ghAccounts.map(a => a.username),
-      ...$scannedRepos.map(r => r.associatedAccount).filter((a): a is string => Boolean(a))
-    ])
-  );
+  // Account names are compared case-insensitively everywhere (see `filteredRepos`), so "Alice"
+  // and "alice" are one pill; the gh CLI spelling wins when both exist.
+  $: accounts = (() => {
+    const byLower = new Map<string, string>();
+    for (const name of [
+      ...$ghAccounts.map((a) => a.username),
+      ...$scannedRepos.map((r) => r.associatedAccount).filter((a): a is string => Boolean(a))
+    ]) {
+      if (!byLower.has(name.toLowerCase())) byLower.set(name.toLowerCase(), name);
+    }
+    return Array.from(byLower.values());
+  })();
 
-  // Single-pass O(N) account tally, shared by every account pill instead of
-  // each pill re-filtering the full repo list
   $: accountStats = (() => {
     const counts: Record<string, number> = {};
     let unassigned = 0;
-    const repos = $scannedRepos;
-
-    for (let i = 0; i < repos.length; i++) {
-      const acc = repos[i].associatedAccount;
-      if (acc) {
-        counts[acc] = (counts[acc] || 0) + 1;
-        const lower = acc.toLowerCase();
-        if (lower !== acc) {
-          counts[lower] = (counts[lower] || 0) + 1;
-        }
+    let all = 0;
+    for (const repo of searchedRepos) {
+      const count = repo.worktrees.length;
+      all += count;
+      if (repo.associatedAccount) {
+        const key = repo.associatedAccount.toLowerCase();
+        counts[key] = (counts[key] || 0) + count;
       } else {
-        unassigned++;
+        unassigned += count;
       }
     }
-
-    return { counts, unassigned };
+    return { counts, unassigned, all };
   })();
 
-  // Single-pass O(N) calculation for status filter counts within the selected account scope
+  // Worktree counts per status filter within the selected account scope
   $: statusCounts = (() => {
     let all = 0;
     let dirty = 0;
@@ -48,32 +53,23 @@
     let clean = 0;
 
     const targetAccount = $selectedAccountFilter;
-    const repos = $scannedRepos;
 
-    for (let i = 0; i < repos.length; i++) {
-      const repo = repos[i];
+    for (const repo of $scannedRepos) {
       if (targetAccount !== 'ALL') {
         if (targetAccount === 'UNASSIGNED' && repo.associatedAccount) continue;
         if (targetAccount !== 'UNASSIGNED' && repo.associatedAccount?.toLowerCase() !== targetAccount.toLowerCase()) continue;
       }
 
-      all++;
-      if (repo.worktrees.length > 1) {
-        multiWt++;
+      // Multi-WT is a repo-level property evaluated on the unsearched repo, as in `filteredRepos`.
+      const isMultiWt = repo.worktrees.length > 1;
+      for (const wt of repo.worktrees) {
+        if (!worktreeMatchesSearch(wt, searchQuery)) continue;
+        all++;
+        if (isMultiWt) multiWt++;
+        if (wt.isDirty) dirty++;
+        else clean++;
+        if (!wt.isMain && wt.isOrphaned) orphans++;
       }
-
-      let repoHasDirty = false;
-      let repoHasOrphan = false;
-
-      for (let j = 0; j < repo.worktrees.length; j++) {
-        const wt = repo.worktrees[j];
-        if (wt.isDirty) repoHasDirty = true;
-        if (!wt.isMain && wt.isOrphaned) repoHasOrphan = true;
-      }
-
-      if (repoHasDirty) dirty++;
-      else clean++;
-      if (repoHasOrphan) orphans++;
     }
 
     return { all, dirty, multiWt, orphans, clean };
@@ -101,10 +97,11 @@
   $: allFilteredSelected = selectableTargets.length > 0 && selectableTargets.every((t) => $selectedPaths.has(t.worktreePath));
 
   function toggleSelectAllFiltered() {
+    // Scoped to the filtered set: selections hidden by the current filter are left untouched.
     if (allFilteredSelected) {
-      batchSelection.clear();
+      batchSelection.deselectRepo(selectableTargets.map((t) => t.worktreePath));
     } else {
-      batchSelection.selectAll(selectableTargets);
+      batchSelection.selectRepo(selectableTargets);
     }
   }
 </script>
@@ -124,8 +121,8 @@
       >
         <Layers size={11} />
         <span>All Accounts</span>
-        <span class="px-1.5 py-0.2 rounded-full bg-neutral-900 text-[10px] font-mono text-neutral-400">
-          {allCount}
+        <span class="px-1.5 py-0.2 rounded-full bg-neutral-900 text-[11px] font-mono text-neutral-400">
+          {accountStats.all}
         </span>
       </button>
 
@@ -139,10 +136,10 @@
               ? 'bg-indigo-950/80 text-indigo-200 border border-indigo-700/60 shadow-xs'
               : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900 border border-transparent'}"
         >
-          <Github size={11} class={$selectedAccountFilter === acc ? 'text-indigo-400' : 'text-neutral-500'} />
-          <span class="font-mono text-[10px]">@{acc}</span>
-          <span class="px-1.5 py-0.2 rounded-full bg-neutral-900/80 text-[10px] font-mono {$selectedAccountFilter === acc ? 'text-indigo-300' : 'text-neutral-500'}">
-            {accountStats.counts[acc] ?? accountStats.counts[acc.toLowerCase()] ?? 0}
+          <Github size={11} class={$selectedAccountFilter === acc ? 'text-indigo-400' : 'text-neutral-400'} />
+          <span class="font-mono text-[11px]">@{acc}</span>
+          <span class="px-1.5 py-0.2 rounded-full bg-neutral-900/80 text-[11px] font-mono {$selectedAccountFilter === acc ? 'text-indigo-300' : 'text-neutral-400'}">
+            {accountStats.counts[acc.toLowerCase()] ?? 0}
           </span>
         </button>
       {/each}
@@ -158,7 +155,7 @@
               : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900 border border-transparent'}"
         >
           <span>Unassigned</span>
-          <span class="px-1.5 py-0.2 rounded-full bg-neutral-900 text-[10px] font-mono text-neutral-500">
+          <span class="px-1.5 py-0.2 rounded-full bg-neutral-900 text-[11px] font-mono text-neutral-400">
             {accountStats.unassigned}
           </span>
         </button>
@@ -178,7 +175,7 @@
           : 'text-neutral-400 hover:text-neutral-300 hover:bg-neutral-900/80 border border-transparent'}"
     >
       <span>All Repos</span>
-      <span class="px-1.5 py-0.2 rounded-full bg-neutral-900 text-[10px] font-mono text-neutral-400">
+      <span class="px-1.5 py-0.2 rounded-full bg-neutral-900 text-[11px] font-mono text-neutral-400">
         {statusCounts.all}
       </span>
     </button>
@@ -193,9 +190,9 @@
           ? 'bg-rose-950/80 text-rose-200 border border-rose-800/70 shadow-xs'
           : 'text-neutral-400 hover:text-rose-300 hover:bg-neutral-900/80 border border-transparent'}"
     >
-      <Flame size={11} class={$selectedStatusFilter === 'DIRTY' ? 'text-rose-400 animate-pulse' : 'text-neutral-500'} />
+      <Flame size={11} class={$selectedStatusFilter === 'DIRTY' ? 'text-rose-400 animate-pulse' : 'text-neutral-400'} />
       <span>Dirty</span>
-      <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono {$selectedStatusFilter === 'DIRTY' ? 'bg-rose-900/80 text-rose-200' : 'bg-neutral-900 text-neutral-400'}">
+      <span class="px-1.5 py-0.2 rounded-full text-[11px] font-mono {$selectedStatusFilter === 'DIRTY' ? 'bg-rose-900/80 text-rose-200' : 'bg-neutral-900 text-neutral-400'}">
         {statusCounts.dirty}
       </span>
     </button>
@@ -210,9 +207,9 @@
           ? 'bg-indigo-950/80 text-indigo-200 border border-indigo-700/70 shadow-xs'
           : 'text-neutral-400 hover:text-indigo-300 hover:bg-neutral-900/80 border border-transparent'}"
     >
-      <GitFork size={11} class={$selectedStatusFilter === 'MULTI_WT' ? 'text-indigo-400' : 'text-neutral-500'} />
+      <GitFork size={11} class={$selectedStatusFilter === 'MULTI_WT' ? 'text-indigo-400' : 'text-neutral-400'} />
       <span>Multi-WT</span>
-      <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono {$selectedStatusFilter === 'MULTI_WT' ? 'bg-indigo-900/80 text-indigo-200' : 'bg-neutral-900 text-neutral-400'}">
+      <span class="px-1.5 py-0.2 rounded-full text-[11px] font-mono {$selectedStatusFilter === 'MULTI_WT' ? 'bg-indigo-900/80 text-indigo-200' : 'bg-neutral-900 text-neutral-400'}">
         {statusCounts.multiWt}
       </span>
     </button>
@@ -227,9 +224,9 @@
           ? 'bg-amber-950/80 text-amber-200 border border-amber-800/70 shadow-xs'
           : 'text-neutral-400 hover:text-amber-300 hover:bg-neutral-900/80 border border-transparent'}"
     >
-      <AlertTriangle size={11} class={$selectedStatusFilter === 'ORPHANS' ? 'text-amber-400' : 'text-neutral-500'} />
+      <AlertTriangle size={11} class={$selectedStatusFilter === 'ORPHANS' ? 'text-amber-400' : 'text-neutral-400'} />
       <span>Orphans</span>
-      <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono {$selectedStatusFilter === 'ORPHANS' ? 'bg-amber-900/80 text-amber-200' : 'bg-neutral-900 text-neutral-400'}">
+      <span class="px-1.5 py-0.2 rounded-full text-[11px] font-mono {$selectedStatusFilter === 'ORPHANS' ? 'bg-amber-900/80 text-amber-200' : 'bg-neutral-900 text-neutral-400'}">
         {statusCounts.orphans}
       </span>
     </button>
@@ -244,9 +241,9 @@
           ? 'bg-emerald-950/80 text-emerald-200 border border-emerald-800/70 shadow-xs'
           : 'text-neutral-400 hover:text-emerald-300 hover:bg-neutral-900/80 border border-transparent'}"
     >
-      <CheckCircle2 size={11} class={$selectedStatusFilter === 'CLEAN' ? 'text-emerald-400' : 'text-neutral-500'} />
+      <CheckCircle2 size={11} class={$selectedStatusFilter === 'CLEAN' ? 'text-emerald-400' : 'text-neutral-400'} />
       <span>Clean</span>
-      <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono {$selectedStatusFilter === 'CLEAN' ? 'bg-emerald-900/80 text-emerald-200' : 'bg-neutral-900 text-neutral-400'}">
+      <span class="px-1.5 py-0.2 rounded-full text-[11px] font-mono {$selectedStatusFilter === 'CLEAN' ? 'bg-emerald-900/80 text-emerald-200' : 'bg-neutral-900 text-neutral-400'}">
         {statusCounts.clean}
       </span>
     </button>

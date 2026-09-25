@@ -1,5 +1,12 @@
 <script lang="ts">
-  import { filteredBranches, isScanningBranches, branchScanError, scannedBranches } from '../stores/branchCleaner';
+  import {
+    filteredBranches,
+    isScanningBranches,
+    branchScanError,
+    scannedBranches,
+    branchSearchFilter,
+    selectedBranchStatusFilter
+  } from '../stores/branchCleaner';
   import { scannedRepos } from '../stores/worktrees';
   import { viewDensity } from '../stores/appConfig';
   import { branchSelection, selectedBranchKeys, branchSelectionKey } from '../stores/branchSelection';
@@ -11,6 +18,7 @@
 
   const dispatch = createEventDispatcher<{
     requestCheckout: BranchStatusEntry;
+    requestRelease: BranchStatusEntry;
   }>();
 
   $: repoNameByPath = new Map($scannedRepos.map((r) => [r.repoPath, r.repoName]));
@@ -62,13 +70,25 @@
       {$branchScanError}
     </div>
   {:else if $isScanningBranches && $scannedBranches.length === 0}
-    <div class="flex items-center justify-center h-48 text-neutral-500 text-xs">
+    <div class="flex items-center justify-center h-48 text-neutral-400 text-xs">
       Scanning branches...
     </div>
   {:else if groupedByRepo.length === 0}
-    <div class="flex flex-col items-center justify-center h-48 text-neutral-500 gap-2 select-none">
+    <div class="flex flex-col items-center justify-center h-48 text-neutral-400 gap-2 select-none">
       <Inbox size={20} />
       <p class="text-xs">No branches match this filter.</p>
+      {#if $branchSearchFilter || $selectedBranchStatusFilter !== 'ALL'}
+        <button
+          type="button"
+          on:click={() => {
+            branchSearchFilter.set('');
+            selectedBranchStatusFilter.set('ALL');
+          }}
+          class="px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-[11px] transition-colors"
+        >
+          Clear Filters
+        </button>
+      {/if}
     </div>
   {:else}
     {#each groupedByRepo as [repoPath, branches] (repoPath)}
@@ -80,7 +100,7 @@
           <div class="flex items-center gap-1.5 min-w-0">
             <FolderGit2 size={13} class="text-indigo-400 flex-shrink-0" />
             <span class="text-xs font-semibold text-neutral-200 truncate" title={repoPath}>{repoName}</span>
-            <span class="px-1.5 py-0.2 rounded-full bg-neutral-800 text-[10px] text-neutral-400 font-mono">
+            <span class="px-1.5 py-0.2 rounded-full bg-neutral-800 text-[11px] text-neutral-400 font-mono">
               {branches.length}
             </span>
           </div>
@@ -90,7 +110,7 @@
               type="button"
               on:click={() => toggleSelectRepo(repoPath, branches)}
               title={allSelected ? 'Deselect all deletable branches in this repo' : 'Select all deletable branches in this repo'}
-              class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors
+              class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] transition-colors
                 {allSelected
                   ? 'bg-rose-950/60 text-rose-300 border border-rose-800/50 hover:bg-rose-900/70'
                   : 'bg-neutral-850 hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 border border-neutral-750'}"
@@ -114,6 +134,7 @@
                 {branch}
                 repoName={repoName}
                 on:requestCheckout={(e) => dispatch('requestCheckout', e.detail)}
+                on:requestRelease={(e) => dispatch('requestRelease', e.detail)}
               />
             {/each}
           </div>
@@ -124,6 +145,7 @@
                 {branch}
                 repoName={repoName}
                 on:requestCheckout={(e) => dispatch('requestCheckout', e.detail)}
+                on:requestRelease={(e) => dispatch('requestRelease', e.detail)}
               />
             {/each}
           </div>

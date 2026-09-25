@@ -1,5 +1,32 @@
 import { writable, derived } from 'svelte/store';
-import type { BatchDeleteTarget } from '../types';
+import type { BatchDeleteTarget, RepositoryWorktrees } from '../types';
+
+/**
+ * Re-derives each selected target from the latest scan: a selection made before a rescan, a
+ * stash or a discard would otherwise carry a stale dirty flag into the delete confirmation.
+ * Targets whose worktree is gone (or became the main one) are dropped.
+ */
+export function rebuildTargetsFromScan(
+  selection: Map<string, BatchDeleteTarget>,
+  repos: RepositoryWorktrees[]
+): Map<string, BatchDeleteTarget> {
+  const next = new Map<string, BatchDeleteTarget>();
+  for (const repo of repos) {
+    for (const wt of repo.worktrees) {
+      const previous = selection.get(wt.path);
+      if (!previous || wt.isMain) continue;
+      next.set(wt.path, {
+        ...previous,
+        repoPath: repo.repoPath,
+        repoName: repo.repoName,
+        branch: wt.branch,
+        isDirty: wt.isDirty,
+        uncommittedFilesCount: wt.uncommittedFilesCount
+      });
+    }
+  }
+  return next;
+}
 
 function createBatchSelectionStore() {
   const { subscribe, set, update } = writable<Map<string, BatchDeleteTarget>>(new Map());
@@ -48,17 +75,11 @@ function createBatchSelectionStore() {
       });
     },
 
-    selectAll: (targets: BatchDeleteTarget[]) => {
-      update(() => {
-        const next = new Map<string, BatchDeleteTarget>();
-        for (const t of targets) {
-          next.set(t.worktreePath, t);
-        }
-        return next;
-      });
-    },
-
     clear: () => set(new Map()),
+
+    syncWithScan: (repos: RepositoryWorktrees[]) => {
+      update((map) => rebuildTargetsFromScan(map, repos));
+    },
 
     prune: (validPaths: Set<string>) => {
       update((map) => {

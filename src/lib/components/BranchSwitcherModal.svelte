@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher, onDestroy } from 'svelte';
+  import { createEventDispatcher } from 'svelte';
   import type { WorktreeInfo, WorktreeBranchesResponse, BranchEntry } from '../types';
   import {
     GitBranch,
@@ -16,9 +16,11 @@
     Code2
   } from 'lucide-svelte';
   import { closeOnEscape } from '../actions/closeOnEscape';
+  import { autofocus } from '../actions/autofocus';
   import { invoke } from '@tauri-apps/api/core';
   import { appConfig } from '../stores/appConfig';
   import { toErrorMessage } from '../utils/errors';
+  import DiscardChangesPanel from './DiscardChangesPanel.svelte';
 
   export let isOpen: boolean = false;
   export let worktree: WorktreeInfo | null = null;
@@ -43,39 +45,26 @@
   $: isResolvingDirty = isStashing || isDiscarding;
   let actionStatusMessage: string | null = null;
   let isConfirmingDiscard = false;
-  let discardCountdown = 5;
-  let discardTimer: ReturnType<typeof setInterval> | null = null;
-
-  onDestroy(() => {
-    if (discardTimer !== null) clearInterval(discardTimer);
-  });
 
   $: if (!isOpen) {
-    if (discardTimer !== null) {
-      clearInterval(discardTimer);
-      discardTimer = null;
-    }
     isConfirmingDiscard = false;
     actionStatusMessage = null;
   }
 
   function startDiscardConfirmation() {
+    if (!worktree) return;
     isConfirmingDiscard = true;
-    discardCountdown = 5;
-    if (discardTimer !== null) {
-      clearInterval(discardTimer);
-      discardTimer = null;
-    }
-    discardTimer = setInterval(() => {
-      discardCountdown -= 1;
-      if (discardCountdown <= 0) {
-        if (discardTimer !== null) {
-          clearInterval(discardTimer);
-          discardTimer = null;
-        }
-        isConfirmingDiscard = false;
-      }
-    }, 1000);
+  }
+
+  function cancelDiscardConfirmation() {
+    isConfirmingDiscard = false;
+  }
+
+  function handleDiscarded(updatedWt: WorktreeInfo) {
+    isConfirmingDiscard = false;
+    worktree = updatedWt;
+    dispatch('worktreeUpdated', updatedWt);
+    actionStatusMessage = 'All uncommitted changes discarded. Worktree is clean!';
   }
 
   async function handleStash() {
@@ -95,30 +84,6 @@
       errorMessage = toErrorMessage(err, 'Failed to stash changes');
     } finally {
       isStashing = false;
-    }
-  }
-
-  async function handleConfirmDiscard() {
-    if (!worktree || isResolvingDirty) return;
-    if (discardTimer !== null) {
-      clearInterval(discardTimer);
-      discardTimer = null;
-    }
-    isConfirmingDiscard = false;
-    isDiscarding = true;
-    errorMessage = null;
-    actionStatusMessage = null;
-    try {
-      const updatedWt = await invoke<WorktreeInfo>('git_discard_worktree_changes', {
-        worktreePath: worktree.path
-      });
-      worktree = updatedWt;
-      dispatch('worktreeUpdated', updatedWt);
-      actionStatusMessage = 'All uncommitted changes discarded. Worktree is clean!';
-    } catch (err: unknown) {
-      errorMessage = toErrorMessage(err, 'Failed to discard changes');
-    } finally {
-      isDiscarding = false;
     }
   }
 
@@ -170,6 +135,14 @@
     });
   }
 
+  let searchInput: HTMLInputElement | null = null;
+
+  // Closing mid-checkout or mid-stash/discard would hide the outcome of an operation still running.
+  function requestClose() {
+    if (isSwitching || isResolvingDirty) return;
+    dispatch('close');
+  }
+
   function handleKeydown(e: KeyboardEvent) {
     if (!isOpen) return;
 
@@ -187,7 +160,9 @@
       return;
     }
 
-    if (e.key === 'Enter') {
+    // Enter picks the highlighted branch only from the search box; elsewhere it must keep
+    // activating the focused button (e.g. Stash or Keep changes).
+    if (e.key === 'Enter' && e.target === searchInput) {
       const branch = filteredBranches[highlightedIndex];
       if (branch) {
         e.preventDefault();
@@ -199,11 +174,12 @@
 
 <svelte:window
   on:keydown={handleKeydown}
-  use:closeOnEscape={{ enabled: () => isOpen, onClose: () => dispatch('close') }}
+  use:closeOnEscape={{ enabled: () => isOpen, onClose: requestClose }}
 />
 
 {#if isOpen && worktree}
   <div
+    use:autofocus
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-150"
     role="dialog"
     aria-modal="true"
@@ -225,9 +201,11 @@
           </div>
         </div>
         <button
-          on:click={() => dispatch('close')}
-          disabled={isSwitching}
-          class="text-neutral-500 hover:text-neutral-300 p-1 rounded-md hover:bg-neutral-800 transition-colors"
+          type="button"
+          on:click={requestClose}
+          disabled={isSwitching || isResolvingDirty}
+          aria-label="Close"
+          class="text-neutral-400 hover:text-neutral-300 p-1 rounded-md hover:bg-neutral-800 transition-colors"
         >
           <X size={14} />
         </button>
@@ -265,35 +243,22 @@
               {/if}
             </button>
 
-            <!-- Discard Changes Button (Double Confirmation) -->
-            {#if !isConfirmingDiscard}
-              <button
-                type="button"
-                disabled={isResolvingDirty || isSwitching}
-                on:click={startDiscardConfirmation}
-                class="px-2.5 py-1 rounded-md bg-neutral-900 hover:bg-rose-950/80 border border-neutral-700/80 hover:border-rose-700/60 text-neutral-300 hover:text-rose-200 font-medium text-[11px] flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
-                title="Discard all uncommitted and untracked changes"
-              >
+            <!-- Discard Changes Button (confirmation opens in a separate slot below) -->
+            <button
+              type="button"
+              disabled={isResolvingDirty || isSwitching || isConfirmingDiscard}
+              on:click={startDiscardConfirmation}
+              class="px-2.5 py-1 rounded-md bg-neutral-900 hover:bg-rose-950/80 border border-neutral-700/80 hover:border-rose-700/60 text-neutral-300 hover:text-rose-200 font-medium text-[11px] flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+              title="Discard all uncommitted and untracked changes"
+            >
+              {#if isDiscarding}
+                <Loader2 size={12} class="animate-spin" />
+                <span>Discarding...</span>
+              {:else}
                 <Trash2 size={12} class="text-neutral-400" />
                 <span>Discard Changes...</span>
-              </button>
-            {:else}
-              <button
-                type="button"
-                disabled={isResolvingDirty || isSwitching}
-                on:click={handleConfirmDiscard}
-                class="px-2.5 py-1 rounded-md bg-rose-700 hover:bg-rose-600 border border-rose-500 text-white font-medium text-[11px] flex items-center gap-1.5 transition-all animate-pulse cursor-pointer disabled:opacity-50"
-                title="Click again to permanently discard all modifications (git reset + clean)"
-              >
-                {#if isDiscarding}
-                  <Loader2 size={12} class="animate-spin" />
-                  <span>Discarding...</span>
-                {:else}
-                  <AlertTriangle size={12} />
-                  <span>Confirm Discard? ({discardCountdown}s)</span>
-                {/if}
-              </button>
-            {/if}
+              {/if}
+            </button>
 
             <!-- Open in Editor Button -->
             <button
@@ -307,6 +272,17 @@
               <span>Open in Editor</span>
             </button>
           </div>
+
+          {#if isConfirmingDiscard}
+            <DiscardChangesPanel
+              worktreePath={worktree.path}
+              uncommittedFilesCount={worktree.uncommittedFilesCount ?? 0}
+              disabled={isSwitching}
+              ondiscarded={handleDiscarded}
+              oncancel={cancelDiscardConfirmation}
+              onbusychange={(busy) => (isDiscarding = busy)}
+            />
+          {/if}
 
           {#if actionStatusMessage}
             <div class="text-[11px] font-mono text-emerald-300 bg-emerald-950/60 border border-emerald-800/50 rounded px-2 py-1 flex items-center gap-1.5">
@@ -326,10 +302,13 @@
 
       <!-- Search Box -->
       <div class="relative">
-        <Search size={13} class="absolute left-2.5 top-2.5 text-neutral-500" />
+        <Search size={13} class="absolute left-2.5 top-2.5 text-neutral-400" />
         <input
           type="text"
+          bind:this={searchInput}
           bind:value={searchQuery}
+          data-autofocus
+          aria-label="Filter branches"
           placeholder="Filter branches (e.g. main, feat/login)..."
           class="w-full bg-neutral-950 border border-neutral-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-mono"
         />
@@ -338,12 +317,12 @@
       <!-- Branch List -->
       <div class="flex-1 overflow-y-auto min-h-[160px] max-h-[260px] space-y-1 pr-1">
         {#if isLoadingBranches}
-          <div class="h-36 flex flex-col items-center justify-center gap-2 text-neutral-500">
+          <div class="h-36 flex flex-col items-center justify-center gap-2 text-neutral-400">
             <Loader2 size={20} class="animate-spin text-indigo-400" />
             <span class="text-xs">Loading repository branches...</span>
           </div>
         {:else if filteredBranches.length === 0}
-          <div class="h-36 flex flex-col items-center justify-center text-neutral-500 text-xs text-center p-4">
+          <div class="h-36 flex flex-col items-center justify-center text-neutral-400 text-xs text-center p-4">
             <span>No matching branches found</span>
           </div>
         {:else}
@@ -357,7 +336,7 @@
                 {branch.isCurrent
                   ? 'bg-indigo-950/40 border-indigo-800/50 text-indigo-300 cursor-default'
                   : branch.isLockedByOther
-                    ? 'bg-neutral-950/40 border-neutral-800/40 text-neutral-500 opacity-60 cursor-not-allowed'
+                    ? 'bg-neutral-950/40 border-neutral-800/40 text-neutral-400 opacity-60 cursor-not-allowed'
                     : worktree.isDirty
                       ? 'bg-neutral-950/20 border-neutral-800/30 text-neutral-400 opacity-60 cursor-not-allowed'
                       : 'bg-neutral-950/50 hover:bg-neutral-800 border-neutral-800/60 hover:border-neutral-700 text-neutral-200 cursor-pointer'}
@@ -365,7 +344,7 @@
             >
               <div class="flex items-center gap-2 min-w-0 flex-1">
                 {#if branch.isRemote}
-                  <Globe size={13} class="text-neutral-500 flex-shrink-0" />
+                  <Globe size={13} class="text-neutral-400 flex-shrink-0" />
                 {:else}
                   <GitBranch size={13} class={branch.isCurrent ? 'text-indigo-400' : 'text-neutral-400'} />
                 {/if}
@@ -376,14 +355,14 @@
                       {branch.shortName}
                     </span>
                     {#if branch.isRemote}
-                      <span class="text-[9px] font-sans px-1 py-0.2 rounded bg-neutral-800 text-neutral-400">
+                      <span class="text-[11px] font-sans px-1 py-0.2 rounded bg-neutral-800 text-neutral-400">
                         remote
                       </span>
                     {/if}
                   </div>
 
                   {#if branch.lastCommitMessage}
-                    <span class="text-[10px] text-neutral-500 truncate font-sans italic">
+                    <span class="text-[11px] text-neutral-400 truncate font-sans italic">
                       {branch.lastCommitMessage}
                     </span>
                   {/if}
@@ -393,15 +372,15 @@
               <!-- Status badge or action -->
               <div class="flex items-center gap-1 flex-shrink-0 ml-2">
                 {#if branch.isCurrent}
-                  <span class="text-[10px] text-indigo-400 flex items-center gap-0.5 font-sans">
+                  <span class="text-[11px] text-indigo-400 flex items-center gap-0.5 font-sans">
                     <Check size={12} /> Active
                   </span>
                 {:else if branch.isLockedByOther}
-                  <span class="text-[10px] text-amber-500/80 flex items-center gap-1 font-sans" title={`Checked out in ${branch.lockedWorktreePath}`}>
+                  <span class="text-[11px] text-amber-500/80 flex items-center gap-1 font-sans" title={`Checked out in ${branch.lockedWorktreePath}`}>
                     <Lock size={11} /> Locked
                   </span>
                 {:else if branch.lastCommitSha}
-                  <span class="text-[10px] text-neutral-600 font-mono flex items-center gap-0.5">
+                  <span class="text-[11px] text-neutral-400 font-mono flex items-center gap-0.5">
                     <GitCommit size={10} /> {branch.lastCommitSha}
                   </span>
                 {/if}
@@ -413,12 +392,13 @@
 
       <!-- Footer -->
       <div class="pt-2 border-t border-neutral-800 flex items-center justify-between text-[11px] text-neutral-400">
-        <span class="text-neutral-500 font-sans">
+        <span class="text-neutral-400 font-sans">
           ↑↓ to navigate, Enter to switch
         </span>
         <button
-          on:click={() => dispatch('close')}
-          disabled={isSwitching}
+          type="button"
+          on:click={requestClose}
+          disabled={isSwitching || isResolvingDirty}
           class="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 transition-colors"
         >
           Cancel

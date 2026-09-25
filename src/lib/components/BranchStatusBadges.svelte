@@ -7,7 +7,7 @@
   /** Matches the two densities the lists already use: rows run one step smaller than cards. */
   export let size: 'sm' | 'md' = 'sm';
 
-  $: textClass = size === 'sm' ? 'text-[9px]' : 'text-[10px]';
+  $: textClass = size === 'sm' ? 'text-[11px]' : 'text-[11px]';
   $: iconSize = size === 'sm' ? 9 : 10;
   $: protectionLabel = branch.isDefault ? 'Default' : branch.isCheckedOut ? 'In worktree' : '';
 </script>

@@ -73,6 +73,32 @@ pub struct BatchDeleteSummary {
 
 pub struct WorktreeCleanerService;
 
+/// How git's worktree registry sees a removal target.
+#[derive(Debug, PartialEq, Eq)]
+enum TargetState {
+    /// Listed, not prunable, and its `.git` link is intact: `git worktree remove` works.
+    Registered,
+    /// Listed but prunable (e.g. its `.git` file is gone): `git worktree remove` rejects it.
+    StaleRegistration,
+    /// Not listed at all: `git worktree remove` answers "is not a working tree".
+    Unregistered,
+}
+
+/// Canonicalizes a path (resolving case and short names) without the verbatim prefix Windows
+/// adds, falling back to the input when the path does not exist.
+fn strip_verbatim_prefix(path: &Path) -> PathBuf {
+    match path.canonicalize() {
+        Ok(p) => {
+            let text = p.to_string_lossy();
+            match text.strip_prefix(r"\\?\") {
+                Some(stripped) => PathBuf::from(stripped),
+                None => p,
+            }
+        }
+        Err(_) => path.to_path_buf(),
+    }
+}
+
 impl WorktreeCleanerService {
     fn should_skip_dir(entry: &walkdir::DirEntry) -> bool {
         if entry.depth() == 0 {
@@ -200,10 +226,10 @@ impl WorktreeCleanerService {
         repo_path: P,
         associated_account: Option<String>,
         watch_folder_path: Option<String>,
-    ) -> Option<RepositoryWorktrees> {
+    ) -> Result<Option<RepositoryWorktrees>, String> {
         let path = repo_path.as_ref();
         if !Self::is_git_repo(path) {
-            return None;
+            return Ok(None);
         }
 
         let repo_name = path
@@ -212,10 +238,7 @@ impl WorktreeCleanerService {
             .unwrap_or("repository")
             .to_string();
 
-        let raw_worktrees = match GitService::run_git(path, &["worktree", "list", "--porcelain"]) {
-            Ok(output) => output,
-            Err(_) => return None,
-        };
+        let raw_worktrees = GitService::run_git(path, &["worktree", "list", "--porcelain"])?;
 
         let mut worktrees = GitService::parse_worktree_porcelain(&raw_worktrees);
         Self::mark_main_worktree(&mut worktrees);
@@ -232,13 +255,13 @@ impl WorktreeCleanerService {
             .par_iter_mut()
             .for_each(|wt| Self::enrich_worktree_info(wt, &orphan_context));
 
-        Some(RepositoryWorktrees {
+        Ok(Some(RepositoryWorktrees {
             repo_path: path.to_string_lossy().to_string(),
             repo_name,
             associated_account,
             watch_folder_path,
             worktrees,
-        })
+        }))
     }
 
     /// Enriches a single worktree entry with last-commit info, dirty status, and orphan status.
@@ -325,21 +348,101 @@ impl WorktreeCleanerService {
         worktree_path: &str,
         force: bool,
     ) -> Result<String, String> {
-        let repo_p = repo_path.as_ref();
+        let result = Self::remove_single_target(repo_path.as_ref(), worktree_path, force)
+            .map_err(|(message, _)| message);
+        let _ = GitService::run_git(repo_path.as_ref(), &["worktree", "prune"]);
+        result
+    }
+
+    /// Normalizes a path for comparison against `git worktree list` output, which uses forward
+    /// slashes and may differ in case or short-name form from what the frontend sends.
+    fn comparable_path(path: &Path) -> String {
+        let resolved = strip_verbatim_prefix(path);
+        let text = resolved.to_string_lossy().replace('\\', "/");
+        let text = text.trim_end_matches('/').to_string();
+        if cfg!(windows) {
+            text.to_lowercase()
+        } else {
+            text
+        }
+    }
+
+    /// Classifies a removal target against git's own worktree registry.
+    fn classify_target(repo_path: &Path, wt_path: &Path) -> Result<TargetState, String> {
+        let wanted = Self::comparable_path(wt_path);
+        let raw = GitService::run_git(repo_path, &["worktree", "list", "--porcelain"])?;
+        let entry = GitService::parse_worktree_porcelain(&raw)
+            .into_iter()
+            .skip(1) // The first entry is always the main worktree.
+            .find(|wt| Self::comparable_path(Path::new(&wt.path)) == wanted);
+
+        Ok(match entry {
+            Some(wt) if wt.prunable.is_none() && wt_path.join(".git").is_file() => {
+                TargetState::Registered
+            }
+            Some(_) => TargetState::StaleRegistration,
+            None => TargetState::Unregistered,
+        })
+    }
+
+    /// Removes one target. Registered worktrees go through `git worktree remove`; a directory git
+    /// cannot validate (its `.git` link is gone, or its registration was already pruned) makes
+    /// that command fail, so it is deleted from disk only after git confirms it is not a
+    /// registered worktree. Such a directory has no git status to prove it clean, so a non-empty
+    /// one requires `force`.
+    fn remove_single_target(
+        repo_path: &Path,
+        worktree_path: &str,
+        force: bool,
+    ) -> Result<String, (String, BatchItemErrorKind)> {
         let wt_path = Path::new(worktree_path);
+        let skipped = |message: String| (message, BatchItemErrorKind::Skipped);
+        let failed = |message: String| (message, BatchItemErrorKind::Failed);
 
         // Protect main repository working tree
-        if wt_path.join(".git").is_dir() || repo_p == wt_path {
-            return Err("Cannot remove the main working tree of a repository.".to_string());
+        if wt_path.join(".git").is_dir()
+            || Self::comparable_path(repo_path) == Self::comparable_path(wt_path)
+        {
+            return Err(skipped(
+                "Cannot remove the main working tree of a repository.".to_string(),
+            ));
+        }
+
+        let mut state = Self::classify_target(repo_path, wt_path).map_err(failed)?;
+        let had_stale_registration = state == TargetState::StaleRegistration;
+        if had_stale_registration {
+            GitService::run_git(repo_path, &["worktree", "prune"]).map_err(failed)?;
+            state = Self::classify_target(repo_path, wt_path).map_err(failed)?;
+            if state != TargetState::Unregistered {
+                return Err(failed(format!(
+                    "Worktree registration for {} could not be pruned; run `git worktree prune` manually.",
+                    worktree_path
+                )));
+            }
+        }
+
+        if state == TargetState::Unregistered && !wt_path.exists() {
+            return if had_stale_registration {
+                Ok(format!("Stale worktree entry pruned: {}", worktree_path))
+            } else {
+                Err(failed(format!(
+                    "{} is not a git worktree of this repository and does not exist.",
+                    worktree_path
+                )))
+            };
+        }
+
+        if state == TargetState::Unregistered {
+            return Self::remove_unregistered_directory(wt_path, worktree_path, force);
         }
 
         if !force {
             let (is_dirty, count) = GitService::check_dirty_status(wt_path);
             if is_dirty {
-                return Err(format!(
+                return Err(skipped(format!(
                     "Cannot remove dirty worktree: {} uncommitted files detected. Please commit, stash, or enable force delete.",
                     count
-                ));
+                )));
             }
         }
 
@@ -350,13 +453,37 @@ impl WorktreeCleanerService {
             args.push("--force");
         }
         args.push(worktree_path);
+        GitService::run_git(repo_path, &args).map_err(failed)
+    }
 
-        let result = GitService::run_git(repo_path.as_ref(), &args)?;
-
-        // Run git worktree prune afterwards
-        let _ = GitService::run_git(repo_path.as_ref(), &["worktree", "prune"]);
-
-        Ok(result)
+    /// Deletes a directory git has confirmed is not a registered worktree. `git status` cannot
+    /// run inside it (it would report the enclosing repository instead), so a non-empty
+    /// directory is only deleted with `force`.
+    fn remove_unregistered_directory(
+        wt_path: &Path,
+        worktree_path: &str,
+        force: bool,
+    ) -> Result<String, (String, BatchItemErrorKind)> {
+        let is_empty = std::fs::read_dir(wt_path)
+            .map(|mut entries| entries.next().is_none())
+            .unwrap_or(false);
+        if !is_empty && !force {
+            return Err((
+                format!(
+                    "{} is not a registered git worktree (its .git link is missing), so its contents cannot be checked for uncommitted work. Enable force delete to remove the directory.",
+                    worktree_path
+                ),
+                BatchItemErrorKind::Skipped,
+            ));
+        }
+        std::fs::remove_dir_all(wt_path)
+            .map(|_| format!("Removed unregistered worktree directory: {}", worktree_path))
+            .map_err(|e| {
+                (
+                    format!("Failed to delete directory {}: {}", worktree_path, e),
+                    BatchItemErrorKind::Failed,
+                )
+            })
     }
 
     /// Removes multiple worktrees safely and efficiently across repositories.
@@ -392,54 +519,20 @@ impl WorktreeCleanerService {
                 let mut local_errors = Vec::new();
 
                 for item in repo_targets {
-                    let wt_path = Path::new(&item.worktree_path);
-
-                    // Protect main repository working tree
-                    if wt_path.join(".git").is_dir() || Path::new(&repo_path) == wt_path {
-                        local_skipped += 1;
-                        local_errors.push(BatchItemError {
-                            worktree_path: item.worktree_path.clone(),
-                            error: "Cannot remove the main working tree of a repository.".to_string(),
-                            kind: BatchItemErrorKind::Skipped,
-                        });
-                        continue;
-                    }
-
-                    // Pre-flight dirty check if force is false
-                    if !item.force {
-                        let (is_dirty, count) = GitService::check_dirty_status(wt_path);
-                        if is_dirty {
-                            local_skipped += 1;
-                            local_errors.push(BatchItemError {
-                                worktree_path: item.worktree_path.clone(),
-                                error: format!(
-                                    "Cannot remove dirty worktree: {} uncommitted files detected. Enable force delete to proceed.",
-                                    count
-                                ),
-                                kind: BatchItemErrorKind::Skipped,
-                            });
-                            continue;
-                        }
-                    }
-
-                    // git worktree remove [--force --force] <path>
-                    let mut args = vec!["worktree", "remove"];
-                    if item.force {
-                        // Passing --force twice allows removing both dirty and locked worktrees in Git
-                        args.push("--force");
-                        args.push("--force");
-                    }
-                    args.push(&item.worktree_path);
-
-                    match GitService::run_git(Path::new(&repo_path), &args) {
-                        Ok(_) => {
-                            local_deleted_paths.push(item.worktree_path);
-                        }
-                        Err(err) => {
+                    match Self::remove_single_target(
+                        Path::new(&repo_path),
+                        &item.worktree_path,
+                        item.force,
+                    ) {
+                        Ok(_) => local_deleted_paths.push(item.worktree_path),
+                        Err((error, kind)) => {
+                            if kind == BatchItemErrorKind::Skipped {
+                                local_skipped += 1;
+                            }
                             local_errors.push(BatchItemError {
                                 worktree_path: item.worktree_path,
-                                error: err,
-                                kind: BatchItemErrorKind::Failed,
+                                error,
+                                kind,
                             });
                         }
                     }

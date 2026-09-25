@@ -7,7 +7,8 @@ export const appConfig = writable<AppConfig>({
   autoSwitchAccount: true,
   defaultEditor: 'vscode',
   defaultTerminal: 'wt',
-  showTerminalButton: true
+  showTerminalButton: true,
+  isPinned: false
 });
 
 export const selectedAccountFilter = writable<string>('ALL');

@@ -65,7 +65,7 @@
   >
     <Layers size={11} />
     <span>All</span>
-    <span class="px-1.5 py-0.2 rounded-full bg-neutral-900 text-[10px] font-mono text-neutral-400">
+    <span class="px-1.5 py-0.2 rounded-full bg-neutral-900 text-[11px] font-mono text-neutral-400">
       {statusCounts.all}
     </span>
   </button>
@@ -79,9 +79,9 @@
         ? 'bg-emerald-950/80 text-emerald-200 border border-emerald-800/70 shadow-xs'
         : 'text-neutral-400 hover:text-emerald-300 hover:bg-neutral-900/80 border border-transparent'}"
   >
-    <GitMerge size={11} class={$selectedBranchStatusFilter === 'MERGED' ? 'text-emerald-400' : 'text-neutral-500'} />
+    <GitMerge size={11} class={$selectedBranchStatusFilter === 'MERGED' ? 'text-emerald-400' : 'text-neutral-400'} />
     <span>Merged</span>
-    <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono {$selectedBranchStatusFilter === 'MERGED' ? 'bg-emerald-900/80 text-emerald-200' : 'bg-neutral-900 text-neutral-400'}">
+    <span class="px-1.5 py-0.2 rounded-full text-[11px] font-mono {$selectedBranchStatusFilter === 'MERGED' ? 'bg-emerald-900/80 text-emerald-200' : 'bg-neutral-900 text-neutral-400'}">
       {statusCounts.merged}
     </span>
   </button>
@@ -95,9 +95,9 @@
         ? 'bg-amber-950/80 text-amber-200 border border-amber-800/70 shadow-xs'
         : 'text-neutral-400 hover:text-amber-300 hover:bg-neutral-900/80 border border-transparent'}"
   >
-    <GitPullRequestClosed size={11} class={$selectedBranchStatusFilter === 'REMOTE_GONE' ? 'text-amber-400' : 'text-neutral-500'} />
+    <GitPullRequestClosed size={11} class={$selectedBranchStatusFilter === 'REMOTE_GONE' ? 'text-amber-400' : 'text-neutral-400'} />
     <span>Remote gone</span>
-    <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono {$selectedBranchStatusFilter === 'REMOTE_GONE' ? 'bg-amber-900/80 text-amber-200' : 'bg-neutral-900 text-neutral-400'}">
+    <span class="px-1.5 py-0.2 rounded-full text-[11px] font-mono {$selectedBranchStatusFilter === 'REMOTE_GONE' ? 'bg-amber-900/80 text-amber-200' : 'bg-neutral-900 text-neutral-400'}">
       {statusCounts.remoteGone}
     </span>
   </button>
@@ -111,9 +111,9 @@
         ? 'bg-indigo-950/80 text-indigo-200 border border-indigo-700/70 shadow-xs'
         : 'text-neutral-400 hover:text-indigo-300 hover:bg-neutral-900/80 border border-transparent'}"
   >
-    <ShieldCheck size={11} class={$selectedBranchStatusFilter === 'PROTECTED' ? 'text-indigo-400' : 'text-neutral-500'} />
+    <ShieldCheck size={11} class={$selectedBranchStatusFilter === 'PROTECTED' ? 'text-indigo-400' : 'text-neutral-400'} />
     <span>Protected</span>
-    <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono {$selectedBranchStatusFilter === 'PROTECTED' ? 'bg-indigo-900/80 text-indigo-200' : 'bg-neutral-900 text-neutral-400'}">
+    <span class="px-1.5 py-0.2 rounded-full text-[11px] font-mono {$selectedBranchStatusFilter === 'PROTECTED' ? 'bg-indigo-900/80 text-indigo-200' : 'bg-neutral-900 text-neutral-400'}">
       {statusCounts.protectedCount}
     </span>
   </button>

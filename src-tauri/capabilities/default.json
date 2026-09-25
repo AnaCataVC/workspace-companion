@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "positioner:default",
-    "positioner:allow-move-window"
+    "positioner:allow-move-window",
+    "global-shortcut:default"
   ]
 }

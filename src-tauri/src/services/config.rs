@@ -40,6 +40,9 @@ pub struct AppConfig {
     pub default_terminal: String,
     #[serde(default = "default_true")]
     pub show_terminal_button: bool,
+    /// Pinned panels stay on top and do not auto-hide on focus loss.
+    #[serde(default)]
+    pub is_pinned: bool,
 }
 
 fn default_version() -> u32 {
@@ -63,6 +66,7 @@ impl Default for AppConfig {
             default_editor: "vscode".to_string(),
             default_terminal: "wt".to_string(),
             show_terminal_button: true,
+            is_pinned: false,
         }
     }
 }
@@ -178,8 +182,18 @@ mod tests {
         assert_eq!(config.default_terminal, "wt");
         assert!(config.show_terminal_button);
         assert!(config.auto_switch_account);
+        assert!(!config.is_pinned);
         assert_eq!(config.watch_folders.len(), 1);
         assert!(config.watch_folders[0].enabled);
         assert_eq!(config.watch_folders[0].max_depth, 1);
+    }
+
+    #[test]
+    fn test_is_pinned_round_trips_as_camel_case() {
+        let json = r#"{"isPinned": true}"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert!(config.is_pinned);
+        let serialized = serde_json::to_string(&config).unwrap();
+        assert!(serialized.contains("\"isPinned\":true"));
     }
 }

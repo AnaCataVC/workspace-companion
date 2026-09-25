@@ -14,8 +14,9 @@
   import BranchList from './lib/components/BranchList.svelte';
   import BranchActionBar from './lib/components/BranchActionBar.svelte';
   import BranchBatchDeleteModal from './lib/components/BranchBatchDeleteModal.svelte';
+  import ReleaseBranchModal from './lib/components/ReleaseBranchModal.svelte';
   import ToastContainer from './lib/components/ToastContainer.svelte';
-  import { scannedRepos, isScanning, isPinned, scanError, highlightedWorktreePath, searchFilter } from './lib/stores/worktrees';
+  import { scannedRepos, filteredRepos, isScanning, isPinned, scanError, highlightedWorktreePath, searchFilter, openWorktreeActionCount } from './lib/stores/worktrees';
   import { scannedBranches, isScanningBranches, branchScanError } from './lib/stores/branchCleaner';
   import { ghAccounts, activeGhAccount, isGhLoading } from './lib/stores/ghAuth';
   import { appConfig, selectedAccountFilter, selectedStatusFilter } from './lib/stores/appConfig';
@@ -25,6 +26,7 @@
   import { notifications } from './lib/stores/notifications';
   import { invoke } from '@tauri-apps/api/core';
   import { toErrorMessage } from './lib/utils/errors';
+  import { isPathWithin, normalizePath } from './lib/utils/paths';
   import type {
     RepositoryWorktrees,
     WorktreeInfo,
@@ -38,6 +40,9 @@
     CreateWorktreeResult,
     CheckoutBranchResult,
     AppConfig,
+    RepoScannedEvent,
+    RepoScanFailedEvent,
+    ScanCompleteEvent,
     BatchDeleteTarget,
     BatchDeleteSummary,
     BranchStatusEntry,
@@ -53,6 +58,10 @@
   let isBranchBatchDeleting: boolean = false;
   let branchBatchDeleteSummary: BranchBatchDeleteSummary | null = null;
   let branchBatchDeleteError: string | null = null;
+
+  // Release Branch Modal state (frees a branch checked out in a worktree so it can be deleted)
+  let isReleaseBranchModalOpen: boolean = false;
+  let selectedBranchForRelease: BranchStatusEntry | null = null;
 
   // Deletion state
   let selectedWorktreeForDelete: WorktreeInfo | null = null;
@@ -219,6 +228,7 @@
       const cfg = await invokeTauri<AppConfig>('get_app_config');
       if (cfg) {
         appConfig.set(cfg);
+        isPinned.set(cfg.isPinned ?? false);
       }
     } catch (err: unknown) {
       notifications.error('Configuration Error', toErrorMessage(err, 'Failed to load app config'));
@@ -242,16 +252,59 @@
     }
   }
 
+  // Each refresh gets a new id; scan events carrying an older id belong to a superseded scan.
+  // The previous list stays on screen until `scan-complete`, which then drops repos this scan
+  // no longer found (a repo that failed to scan keeps its last known state).
+  let currentScanId = 0;
+  let reposSeenInScan = new Set<string>();
+  let reposFailedInScan: RepoScanFailedEvent[] = [];
+
   async function refreshWorktrees() {
+    const scanId = ++currentScanId;
+    reposSeenInScan = new Set();
+    reposFailedInScan = [];
     isScanning.set(true);
     scanError.set(null);
-    scannedRepos.set([]);
 
     try {
-      await invokeTauri('scan_worktrees');
+      await invokeTauri('scan_worktrees', { scanId });
     } catch (err: unknown) {
+      if (scanId !== currentScanId) return;
       scanError.set(toErrorMessage(err, 'Failed to scan worktrees'));
       isScanning.set(false);
+    }
+  }
+
+  function handleRepoScanned(event: RepoScannedEvent) {
+    if (event.scanId !== currentScanId) return;
+    const repo = event.repo;
+    reposSeenInScan.add(repo.repoPath);
+    scannedRepos.update((repos) => {
+      const existingIndex = repos.findIndex((r) => r.repoPath === repo.repoPath);
+      if (existingIndex >= 0) {
+        const updated = [...repos];
+        updated[existingIndex] = repo;
+        return updated;
+      }
+      return [...repos, repo];
+    });
+  }
+
+  function handleRepoScanFailed(event: RepoScanFailedEvent) {
+    if (event.scanId !== currentScanId) return;
+    // Scanned paths are the canonical repo root, which may differ in form from the discovered path.
+    const previous = $scannedRepos.find((r) => normalizePath(r.repoPath) === normalizePath(event.repoPath));
+    reposSeenInScan.add(previous?.repoPath ?? event.repoPath);
+    reposFailedInScan = [...reposFailedInScan, event];
+  }
+
+  function handleScanComplete(event: ScanCompleteEvent) {
+    if (event.scanId !== currentScanId) return;
+    scannedRepos.update((repos) => repos.filter((r) => reposSeenInScan.has(r.repoPath)));
+    isScanning.set(false);
+    if (reposFailedInScan.length > 0) {
+      const details = reposFailedInScan.map((f) => `${f.repoPath}: ${f.error}`).join(' | ');
+      scanError.set(`Could not scan ${reposFailedInScan.length} repository(ies): ${details}`);
     }
   }
 
@@ -283,17 +336,30 @@
     }
   }
 
+  /** The repo owning `targetPath`: the deepest repo or worktree root that contains it. */
+  function findRepoForPath(targetPath: string): RepositoryWorktrees | undefined {
+    let best: { repo: RepositoryWorktrees; depth: number } | undefined;
+    for (const repo of $scannedRepos) {
+      for (const root of [repo.repoPath, ...repo.worktrees.map((w) => w.path)]) {
+        if (!isPathWithin(targetPath, root)) continue;
+        const depth = normalizePath(root).length;
+        if (!best || depth > best.depth) best = { repo, depth };
+      }
+    }
+    return best?.repo;
+  }
+
   // Smart Context Switcher check before action
   async function ensureMatchingAccountForPath(targetPath: string) {
     if (!$appConfig.autoSwitchAccount) return;
-    const repo = $scannedRepos.find(r => targetPath.startsWith(r.repoPath) || r.worktrees.some(w => targetPath.startsWith(w.path)));
-    if (repo?.associatedAccount && repo.associatedAccount !== $activeGhAccount) {
-      try {
-        await invokeTauri('switch_gh_account', { username: repo.associatedAccount });
-        await refreshGhAccounts();
-      } catch {
-        // Non-blocking context switch attempt
-      }
+    const account = findRepoForPath(targetPath)?.associatedAccount;
+    if (!account || account.toLowerCase() === ($activeGhAccount ?? '').toLowerCase()) return;
+    try {
+      await invokeTauri('switch_gh_account', { username: account });
+      await refreshGhAccounts();
+      notifications.info('GitHub account switched', `Active gh account is now ${account}.`);
+    } catch (err: unknown) {
+      notifications.error(`Could not switch gh account to ${account}`, toErrorMessage(err));
     }
   }
 
@@ -309,18 +375,22 @@
     const { editor, path } = event.detail;
     // Account switch runs concurrently, not awaited: it must not delay the editor launch itself.
     ensureMatchingAccountForPath(path);
-    invokeTauri('open_in_editor', { editor, path }).catch((err: unknown) => {
-      notifications.error(`Could not open editor (${editor})`, toErrorMessage(err));
-    });
+    invokeTauri('open_in_editor', { editor, path })
+      .then(() => notifications.success(`Opening in ${editor}`, path, 2500))
+      .catch((err: unknown) => {
+        notifications.error(`Could not open editor (${editor})`, toErrorMessage(err));
+      });
   }
 
   function handleOpenTerminal(event: CustomEvent<{ terminal: SupportedTerminal; path: string }>) {
     const { terminal, path } = event.detail;
     if (terminal === 'none') return;
     ensureMatchingAccountForPath(path);
-    invokeTauri('open_in_terminal', { terminal, path }).catch((err: unknown) => {
-      notifications.error(`Could not open terminal (${terminal})`, toErrorMessage(err));
-    });
+    invokeTauri('open_in_terminal', { terminal, path })
+      .then(() => notifications.success(`Opening ${terminal} terminal`, path, 2500))
+      .catch((err: unknown) => {
+        notifications.error(`Could not open terminal (${terminal})`, toErrorMessage(err));
+      });
   }
 
   // Branch Switcher Modal handlers
@@ -389,6 +459,17 @@
       repos.map((r) =>
         r.repoPath === repoPath
           ? { ...r, worktrees: r.worktrees.map((w) => (w.path === freshInfo.path ? freshInfo : w)) }
+          : r
+      )
+    );
+  }
+
+  function handleWorktreeDiscarded(event: CustomEvent<{ worktree: WorktreeInfo; repoPath: string }>) {
+    const { worktree: updatedWt, repoPath } = event.detail;
+    scannedRepos.update((repos) =>
+      repos.map((r) =>
+        r.repoPath === repoPath
+          ? { ...r, worktrees: r.worktrees.map((w) => (w.path === updatedWt.path ? updatedWt : w)) }
           : r
       )
     );
@@ -471,6 +552,7 @@
       });
       isDeleteModalOpen = false;
       selectedWorktreeForDelete = null;
+      notifications.success('Worktree removed', `${worktree.path} removed. Branch ${worktree.branch?.replace('refs/heads/', '') ?? '(detached)'} was kept.`);
 
       scannedRepos.update((repos) =>
         repos
@@ -489,6 +571,7 @@
   }
 
   function handleOpenBatchDeleteModal() {
+    batchSelection.syncWithScan($scannedRepos);
     batchDeleteSummary = null;
     batchDeleteError = null;
     isBatchDeleteModalOpen = true;
@@ -582,6 +665,15 @@
       force: false
     }));
 
+    const orphanPaths = new Set(targets.map((t) => t.worktreePath));
+    const otherSelected = $selectedWorktreeList.filter((t) => !orphanPaths.has(t.worktreePath)).length;
+    if (
+      otherSelected > 0 &&
+      !window.confirm(`Replace your current selection (${otherSelected} other worktree(s)) with the ${targets.length} orphan(s) of ${repo.repoName}?`)
+    ) {
+      return;
+    }
+
     batchSelection.clear();
     batchSelection.selectRepo(targets);
     batchDeleteSummary = null;
@@ -651,6 +743,35 @@
     isNewWorktreeOpen = true;
   }
 
+  function handleRequestReleaseBranch(event: CustomEvent<BranchStatusEntry>) {
+    selectedBranchForRelease = event.detail;
+    isReleaseBranchModalOpen = true;
+  }
+
+  async function handleBranchReleased(event: CustomEvent<{ repoPath: string; branchName: string; deletedWorktreePath?: string }>) {
+    const { repoPath, branchName, deletedWorktreePath } = event.detail;
+    isReleaseBranchModalOpen = false;
+    selectedBranchForRelease = null;
+
+    scannedBranches.update((existing) => existing.filter((b) => !(b.repoPath === repoPath && b.name === branchName)));
+    branchSelection.prune(new Set($scannedBranches.map((b) => `${b.repoPath}::${b.name}`)));
+
+    if (deletedWorktreePath) {
+      scannedRepos.update((repos) =>
+        repos
+          .map((r) =>
+            r.repoPath === repoPath
+              ? { ...r, worktrees: r.worktrees.filter((w) => w.path !== deletedWorktreePath) }
+              : r
+          )
+          .filter((r) => r.worktrees.length > 0)
+      );
+      batchSelection.deselect(deletedWorktreePath);
+    }
+
+    notifications.success('Branch released', `${branchName} was deleted.`);
+  }
+
   function handleOpenBranchBatchDeleteModal() {
     branchBatchDeleteSummary = null;
     branchBatchDeleteError = null;
@@ -703,38 +824,71 @@
     }
   }
 
-  // Sync window AlwaysOnTop with isPinned store
-  $: {
-    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-      import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
-        getCurrentWindow().setAlwaysOnTop($isPinned).catch(() => {
-          // Window focus/pin sync non-fatal fallback
-        });
-      });
+  async function handleTogglePin() {
+    const pinned = !$isPinned;
+    isPinned.set(pinned);
+    try {
+      const saved = await invokeTauri<AppConfig>('save_app_config', { config: { ...$appConfig, isPinned: pinned } });
+      if (saved) appConfig.set(saved);
+    } catch (err: unknown) {
+      notifications.error('Could not save pin state', toErrorMessage(err));
     }
   }
 
+  // "Busy" keeps the panel visible on focus loss: blurring mid-modal or mid-action would hide the
+  // dialog or the progress/result the user is waiting for.
+  $: visibleWorktreePaths = new Set($filteredRepos.flatMap((r) => r.worktrees.map((w) => w.path)));
+
+  $: isAnyModalOpen =
+    isDeleteModalOpen ||
+    isBatchDeleteModalOpen ||
+    isBranchBatchDeleteModalOpen ||
+    isReleaseBranchModalOpen ||
+    isGhModalOpen ||
+    isSettingsModalOpen ||
+    isBranchSwitcherOpen ||
+    isNewWorktreeOpen;
+  $: isActionRunning =
+    isDeletingWorktree || isBatchDeleting || isBranchBatchDeleting || isSavingConfig || isSwitchingBranch || isCreatingWorktree || $openWorktreeActionCount > 0;
+  $: syncPanelState($isPinned, isAnyModalOpen || isActionRunning);
+
+  function syncPanelState(pinned: boolean, busy: boolean) {
+    invokeTauri('set_panel_state', { pinned, busy }).catch((err: unknown) => {
+      notifications.error('Window state error', toErrorMessage(err, 'Failed to sync pin/auto-hide state'));
+    });
+  }
+
+  // Captured before any modal's own Escape handler runs, so the Escape that closes a modal does
+  // not also hide the panel.
+  let modalOpenAtEscape = false;
+
+  function handleWindowKeydownCapture(event: KeyboardEvent) {
+    if (event.key === 'Escape') modalOpenAtEscape = isAnyModalOpen;
+  }
+
+  function handleWindowKeydown(event: KeyboardEvent) {
+    // Inline widgets that consume Escape themselves call preventDefault.
+    if (event.key !== 'Escape' || modalOpenAtEscape || event.defaultPrevented) return;
+    invokeTauri('hide_panel').catch(() => {
+      // Hiding is best-effort; the tray and Alt+Space still toggle the panel.
+    });
+  }
+
   let unlistenRepo: (() => void) | null = null;
+  let unlistenRepoFailed: (() => void) | null = null;
   let unlistenDone: (() => void) | null = null;
+  let unlistenTrayRefresh: (() => void) | null = null;
 
   onMount(async () => {
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
       try {
         const { listen } = await import('@tauri-apps/api/event');
-        unlistenRepo = await listen<RepositoryWorktrees>('repo-scanned', (event) => {
-          scannedRepos.update((repos) => {
-            const existingIndex = repos.findIndex((r) => r.repoPath === event.payload.repoPath);
-            if (existingIndex >= 0) {
-              const updated = [...repos];
-              updated[existingIndex] = event.payload;
-              return updated;
-            }
-            return [...repos, event.payload];
-          });
-        });
+        unlistenRepo = await listen<RepoScannedEvent>('repo-scanned', (event) => handleRepoScanned(event.payload));
+        unlistenRepoFailed = await listen<RepoScanFailedEvent>('repo-scan-failed', (event) => handleRepoScanFailed(event.payload));
+        unlistenDone = await listen<ScanCompleteEvent>('scan-complete', (event) => handleScanComplete(event.payload));
 
-        unlistenDone = await listen('scan-complete', () => {
-          isScanning.set(false);
+        unlistenTrayRefresh = await listen('refresh-worktrees', () => {
+          refreshWorktrees();
         });
       } catch (err: unknown) {
         notifications.error('Event Listener Error', toErrorMessage(err, 'Failed to setup scan event listeners'));
@@ -749,9 +903,13 @@
 
   onDestroy(() => {
     if (unlistenRepo) unlistenRepo();
+    if (unlistenRepoFailed) unlistenRepoFailed();
     if (unlistenDone) unlistenDone();
+    if (unlistenTrayRefresh) unlistenTrayRefresh();
   });
 </script>
+
+<svelte:window on:keydown|capture={handleWindowKeydownCapture} on:keydown={handleWindowKeydown} />
 
 <main class="w-full h-screen flex flex-col bg-neutral-900 text-neutral-100 overflow-hidden select-none relative">
   <Header
@@ -762,6 +920,7 @@
     onOpenGhModal={() => (isGhModalOpen = true)}
     onOpenNewWorktreeModal={() => handleOpenNewWorktree()}
     onOpenSettingsModal={() => (isSettingsModalOpen = true)}
+    onTogglePin={handleTogglePin}
   />
 
   {#if activeView === 'worktrees'}
@@ -782,6 +941,7 @@
       on:switchGhAccount={(e) => handleSwitchGhAccount(e.detail)}
       on:openSettings={() => (isSettingsModalOpen = true)}
       on:requestDelete={handleRequestDelete}
+      on:worktreeDiscarded={handleWorktreeDiscarded}
       on:cleanAllOrphans={handleCleanAllOrphans}
       on:worktreeCreated={handleQuickWorktreeCreated}
     />
@@ -793,6 +953,7 @@
     <BatchDeleteModal
       isOpen={isBatchDeleteModalOpen}
       targets={$selectedWorktreeList}
+      visiblePaths={visibleWorktreePaths}
       isDeleting={isBatchDeleting}
       summary={batchDeleteSummary}
       errorMessage={batchDeleteError}
@@ -803,7 +964,7 @@
   {:else}
     <BranchFilterBar />
 
-    <BranchList on:requestCheckout={handleRequestCheckoutBranch} />
+    <BranchList on:requestCheckout={handleRequestCheckoutBranch} on:requestRelease={handleRequestReleaseBranch} />
 
     <!-- Floating Branch Batch Action Bar -->
     <BranchActionBar on:openBatchDeleteModal={handleOpenBranchBatchDeleteModal} />
@@ -817,6 +978,15 @@
       errorMessage={branchBatchDeleteError}
       on:close={() => (isBranchBatchDeleteModalOpen = false)}
       on:confirmDelete={handleConfirmBranchBatchDelete}
+    />
+
+    <!-- Release Branch Modal: frees a branch checked out in a worktree so it can be deleted -->
+    <ReleaseBranchModal
+      isOpen={isReleaseBranchModalOpen}
+      branch={selectedBranchForRelease}
+      on:close={() => (isReleaseBranchModalOpen = false)}
+      on:worktreeDiscarded={handleWorktreeDiscarded}
+      on:released={handleBranchReleased}
     />
   {/if}
 
@@ -851,6 +1021,7 @@
     errorMessage={newWorktreeError}
     onSuggestPath={handleSuggestPath}
     onFetchBranches={handleFetchBranchesForRepo}
+    onCheckTargetOccupied={(targetPath) => invokeTauri<boolean>('is_worktree_target_occupied', { targetPath })}
     on:close={() => (isNewWorktreeOpen = false)}
     on:create={handleConfirmCreateWorktree}
   />
