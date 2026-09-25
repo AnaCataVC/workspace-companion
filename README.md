@@ -23,10 +23,10 @@
 - 🧹 **Orphaned Worktree Cleaner**: Safely identifies worktrees whose remote upstream branch has been deleted or merged, equipped with pre-flight dirty checks to prevent accidental loss of uncommitted work.
 - 🌿 **Branch Cleaner**: Lists every local branch across managed repos — including ones with no worktree of their own — flagged as merged, remote-gone, or protected, for safe bulk deletion. The default branch and any checked-out branch are never deletable, even when forcing an unmerged one.
 - 🔄 **1-Click GitHub CLI Profile Switcher**: Instantly toggle between personal and corporate GitHub CLI identities (e.g. `gh auth switch`) and prevent author mismatch.
-- 🪟 **Spotlight-style Floating Window**: Resides silently in the Windows system tray (<40 MB RAM in background) and opens next to the tray icon.
+- 🪟 **Desktop Window with System Tray Integration**: Resides silently in the Windows system tray (<40 MB RAM in background) and opens next to the tray icon.
   - **Toggle**: single-click the tray icon, or press **Alt+Space** from anywhere (global shortcut; if another app already owns it, the tray still works).
   - **Hide**: the window's **X** and **Esc** (with no dialog open) hide the panel to the tray instead of quitting; quit from the tray menu.
-  - **Auto-hide on blur**: the panel hides when it loses focus, except while it is **pinned** or a dialog or action is in progress. The pin state is saved and restored on the next launch.
+  - **Always on Top (Pin)**: the window stays visible as a standard desktop application without disappearing when moved or blurred; clicking the **Pin** button toggles *Always on Top* so it stays above other windows. The pin state is saved and restored on next launch.
 - 🛡️ **Safer destructive actions**: discarding changes before a branch switch lists the files that will be lost and only arms the confirm button after a short delay; batch delete re-checks each selected worktree against the latest scan and flags selections hidden by the current filter.
 
 #### 🧭 UI Anatomy at a Glance:
@@ -117,10 +117,10 @@ npm run build
 - 🧹 **Limpiador Seguro de Worktrees Huérfanos**: Detecta ramas mergeadas o eliminadas remotamente con validación previa de cambios sin commitear para evitar pérdida accidental de código.
 - 🌿 **Limpiador de Ramas**: Lista todas las ramas locales de los repos gestionados —incluidas las que no tienen worktree propio— marcadas como mergeadas, sin remoto o protegidas, para borrado seguro en lote. La rama por defecto y cualquier rama activa en un worktree nunca se pueden borrar, ni forzando una rama sin mergear.
 - 🔄 **Conmutador de Cuentas GitHub CLI en 1 Clic**: Alterna de forma inmediata entre cuentas de trabajo y personales (`gh auth switch`).
-- 🪟 **Ventana Flotante Estilo Spotlight**: Permanece en la bandeja consumiendo menos de 40 MB de RAM y se abre junto al ícono del tray.
+- 🪟 **Ventana de Escritorio Integrada con el System Tray**: Permanece en la bandeja consumiendo menos de 40 MB de RAM y se abre junto al ícono del tray.
   - **Mostrar/ocultar**: un clic en el ícono del tray, o **Alt+Space** desde cualquier lugar (atajo global; si otra aplicación ya lo usa, el tray sigue funcionando).
   - **Ocultar**: la **X** de la ventana y **Esc** (sin ningún diálogo abierto) ocultan el panel en la bandeja en vez de cerrar la aplicación; para salir, usa el menú del tray.
-  - **Auto-ocultar al desenfocar**: el panel se oculta al perder el foco, salvo que esté **fijado** (*pin*) o haya un diálogo o una acción en curso. El estado del pin se guarda y se restaura al volver a abrir la aplicación.
+  - **Siempre visible (Pin)**: la ventana permanece visible como una aplicación estándar sin desaparecer al moverla o cambiar de foco; el botón **Pin** alterna *Always on Top* para mantenerla encima de otras ventanas. El estado del pin se guarda y se restaura al volver a abrir la aplicación.
 - 🛡️ **Acciones destructivas más seguras**: descartar cambios antes de cambiar de rama muestra los archivos que se perderán y solo habilita la confirmación tras una breve espera; el borrado en lote revalida cada worktree seleccionado contra el último escaneo y marca las selecciones ocultas por el filtro activo.
 
 #### 🧭 Anatomía de la Interfaz:

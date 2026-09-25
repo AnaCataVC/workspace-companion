@@ -1,6 +1,6 @@
 [package]
 name = "workspace-companion"
-version = "2.2.0"
+version = "2.2.1"
 description = "System Tray & Floating Companion for Git Worktrees and GitHub CLI"
 authors = ["Ana Catalina (AnaCataVC)"]
 license = "MIT"

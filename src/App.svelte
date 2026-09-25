@@ -854,7 +854,7 @@
 
   function syncPanelState(pinned: boolean, busy: boolean) {
     invokeTauri('set_panel_state', { pinned, busy }).catch((err: unknown) => {
-      notifications.error('Window state error', toErrorMessage(err, 'Failed to sync pin/auto-hide state'));
+      notifications.error('Window state error', toErrorMessage(err, 'Failed to sync pin/always-on-top state'));
     });
   }
 

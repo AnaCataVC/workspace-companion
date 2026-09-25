@@ -109,8 +109,8 @@
       <!-- Pin Window Toggle -->
       <button
         on:click={onTogglePin}
-        title={$isPinned ? "Unpin window (auto-hide on blur)" : "Pin window (keep visible)"}
-        aria-label={$isPinned ? "Unpin window (auto-hide on blur)" : "Pin window (keep visible)"}
+        title={$isPinned ? "Unpin window (keep normal window order)" : "Pin window (always on top)"}
+        aria-label={$isPinned ? "Unpin window (keep normal window order)" : "Pin window (always on top)"}
         class="p-1.5 rounded-md hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 transition-colors"
       >
         {#if $isPinned}

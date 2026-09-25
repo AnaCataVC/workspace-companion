@@ -1,7 +1,7 @@
 {
   "name": "workspace-companion",
   "private": true,
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "System Tray & Floating Companion for Git Worktrees and GitHub CLI",
   "author": "Ana Catalina (AnaCataVC)",
   "license": "MIT",

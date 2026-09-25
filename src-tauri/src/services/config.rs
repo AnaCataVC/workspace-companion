@@ -40,7 +40,7 @@ pub struct AppConfig {
     pub default_terminal: String,
     #[serde(default = "default_true")]
     pub show_terminal_button: bool,
-    /// Pinned panels stay on top and do not auto-hide on focus loss.
+    /// Pinned windows stay always on top of other applications.
     #[serde(default)]
     pub is_pinned: bool,
 }

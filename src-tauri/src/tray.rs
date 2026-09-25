@@ -1,6 +1,4 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -9,18 +7,12 @@ use tauri::{
 };
 use tauri_plugin_positioner::{Position, WindowExt};
 
-/// A blur-hide this recent is treated as the same gesture as the tray click that caused it.
-/// Clicking the tray icon steals focus from the panel before the click event arrives, so without
-/// this grace window a "hide" click would hide on blur and immediately re-show on click.
-const BLUR_TOGGLE_GRACE: Duration = Duration::from_millis(300);
-
-/// Panel visibility policy shared between the window event handler, the tray and the shortcut.
-/// `pinned` and `busy` are pushed by the frontend through `set_panel_state`.
+/// Panel state shared between the commands, the tray and the shortcut.
+/// `pinned` keeps the window always on top.
 #[derive(Default)]
 pub struct PanelState {
     pinned: AtomicBool,
     busy: AtomicBool,
-    last_blur_hide: Mutex<Option<Instant>>,
 }
 
 impl PanelState {
@@ -29,43 +21,12 @@ impl PanelState {
         self.busy.store(busy, Ordering::SeqCst);
     }
 
-    fn should_hide_on_blur(&self) -> bool {
-        should_hide_on_blur(
-            self.pinned.load(Ordering::SeqCst),
-            self.busy.load(Ordering::SeqCst),
-        )
+    pub fn is_pinned(&self) -> bool {
+        self.pinned.load(Ordering::SeqCst)
     }
 
-    fn mark_blur_hide(&self, at: Instant) {
-        if let Ok(mut last) = self.last_blur_hide.lock() {
-            *last = Some(at);
-        }
-    }
-
-    fn take_recent_blur_hide(&self, now: Instant) -> bool {
-        self.last_blur_hide
-            .lock()
-            .map(|mut last| is_within_grace(last.take(), now))
-            .unwrap_or(false)
-    }
-}
-
-/// The panel auto-hides on focus loss only when the user has not pinned it and no modal or
-/// long-running action is in progress (a blur mid-action would hide its progress and result).
-pub fn should_hide_on_blur(pinned: bool, busy: bool) -> bool {
-    !pinned && !busy
-}
-
-fn is_within_grace(last_hide: Option<Instant>, now: Instant) -> bool {
-    last_hide.is_some_and(|at| now.saturating_duration_since(at) < BLUR_TOGGLE_GRACE)
-}
-
-/// Hides the panel on focus loss when the panel policy allows it.
-pub fn handle_focus_lost<R: Runtime>(window: &tauri::Window<R>) {
-    let state = window.state::<PanelState>();
-    if state.should_hide_on_blur() {
-        state.mark_blur_hide(Instant::now());
-        let _ = window.hide();
+    pub fn is_busy(&self) -> bool {
+        self.busy.load(Ordering::SeqCst)
     }
 }
 
@@ -98,12 +59,6 @@ pub fn toggle_main_window<R: Runtime>(app: &AppHandle<R>) {
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
-    if app
-        .state::<PanelState>()
-        .take_recent_blur_hide(Instant::now())
-    {
-        return;
-    }
     if window.is_visible().unwrap_or(false) {
         let _ = window.hide();
     } else {
@@ -163,33 +118,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hides_on_blur_only_when_unpinned_and_idle() {
-        assert!(should_hide_on_blur(false, false));
-        assert!(!should_hide_on_blur(true, false));
-        assert!(!should_hide_on_blur(false, true));
-        assert!(!should_hide_on_blur(true, true));
-    }
-
-    #[test]
-    fn blur_hide_inside_grace_swallows_the_toggle() {
-        let hidden_at = Instant::now();
-        assert!(is_within_grace(
-            Some(hidden_at),
-            hidden_at + Duration::from_millis(100)
-        ));
-        assert!(!is_within_grace(
-            Some(hidden_at),
-            hidden_at + BLUR_TOGGLE_GRACE
-        ));
-        assert!(!is_within_grace(None, hidden_at));
-    }
-
-    #[test]
-    fn recent_blur_hide_is_consumed_once() {
+    fn panel_state_tracks_pinned_and_busy() {
         let state = PanelState::default();
-        let now = Instant::now();
-        state.mark_blur_hide(now);
-        assert!(state.take_recent_blur_hide(now));
-        assert!(!state.take_recent_blur_hide(now));
+        assert!(!state.is_pinned());
+        assert!(!state.is_busy());
+
+        state.set(true, false);
+        assert!(state.is_pinned());
+        assert!(!state.is_busy());
+
+        state.set(false, true);
+        assert!(!state.is_pinned());
+        assert!(state.is_busy());
     }
 }
