@@ -15,6 +15,7 @@
   import BranchActionBar from './lib/components/BranchActionBar.svelte';
   import BranchBatchDeleteModal from './lib/components/BranchBatchDeleteModal.svelte';
   import ReleaseBranchModal from './lib/components/ReleaseBranchModal.svelte';
+  import QuickActionsModal from './lib/components/QuickActionsModal.svelte';
   import ToastContainer from './lib/components/ToastContainer.svelte';
   import { scannedRepos, filteredRepos, isScanning, isPinned, scanError, highlightedWorktreePath, searchFilter, openWorktreeActionCount } from './lib/stores/worktrees';
   import { scannedBranches, isScanningBranches, branchScanError } from './lib/stores/branchCleaner';
@@ -24,6 +25,7 @@
   import { branchSelection, selectedBranchList } from './lib/stores/branchSelection';
   import { installedEditors } from './lib/stores/editors';
   import { notifications } from './lib/stores/notifications';
+  import { isQuickActionsModalOpen } from './lib/stores/quickActions';
   import { invoke } from '@tauri-apps/api/core';
   import { toErrorMessage } from './lib/utils/errors';
   import { isPathWithin, normalizePath } from './lib/utils/paths';
@@ -847,7 +849,8 @@
     isGhModalOpen ||
     isSettingsModalOpen ||
     isBranchSwitcherOpen ||
-    isNewWorktreeOpen;
+    isNewWorktreeOpen ||
+    $isQuickActionsModalOpen;
   $: isActionRunning =
     isDeletingWorktree || isBatchDeleting || isBranchBatchDeleting || isSavingConfig || isSwitchingBranch || isCreatingWorktree || $openWorktreeActionCount > 0;
   $: syncPanelState($isPinned, isAnyModalOpen || isActionRunning);
@@ -920,6 +923,7 @@
     onOpenGhModal={() => (isGhModalOpen = true)}
     onOpenNewWorktreeModal={() => handleOpenNewWorktree()}
     onOpenSettingsModal={() => (isSettingsModalOpen = true)}
+    onOpenQuickActionsModal={() => isQuickActionsModalOpen.set(true)}
     onTogglePin={handleTogglePin}
   />
 
@@ -1040,6 +1044,17 @@
     on:close={() => (isGhModalOpen = false)}
     on:switchAccount={handleSwitchGhAccount}
     on:refreshAccounts={refreshGhAccounts}
+  />
+
+  <QuickActionsModal
+    isOpen={$isQuickActionsModalOpen}
+    on:close={() => isQuickActionsModalOpen.set(false)}
+    on:actionCompleted={() => {
+      refreshWorktrees();
+      if (activeView === 'branches') {
+        refreshBranches();
+      }
+    }}
   />
 
   <ToastContainer />

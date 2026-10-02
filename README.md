@@ -23,6 +23,7 @@
 - 🧹 **Orphaned Worktree Cleaner**: Safely identifies worktrees whose remote upstream branch has been deleted or merged, equipped with pre-flight dirty checks to prevent accidental loss of uncommitted work.
 - 🌿 **Branch Cleaner**: Lists every local branch across managed repos — including ones with no worktree of their own — flagged as merged, remote-gone, or protected, for safe bulk deletion. The default branch and any checked-out branch are never deletable, even when forcing an unmerged one.
 - 🔄 **1-Click GitHub CLI Profile Switcher**: Instantly toggle between personal and corporate GitHub CLI identities (e.g. `gh auth switch`) and prevent author mismatch.
+- ⚡ **Quick Actions & Bulk Cleanup**: One-click atomic workspace maintenance across a single repository or all watched folders simultaneously. Offers four bounded presets: discarding uncommitted changes without touching `.gitignore`d secrets, nuking secondary worktrees, cleaning merged/local branches, or performing a 5-phase **Total Fresh Start** reset to default branch. Protected by pre-flight impact previews (unpushed commit audits) and armed safety confirmation triggers (3-second countdown or typed `"RESET"` verification).
 - 🪟 **Desktop Window with System Tray Integration**: Resides silently in the Windows system tray (<40 MB RAM in background) and opens next to the tray icon.
   - **Toggle**: single-click the tray icon, or press **Alt+Space** from anywhere (global shortcut; if another app already owns it, the tray still works).
   - **Hide**: the window's **X** and **Esc** (with no dialog open) hide the panel to the tray instead of quitting; quit from the tray menu.
@@ -53,6 +54,7 @@ For a comprehensive breakdown of all toolbar buttons, status indicators, and vie
 - **Resilient Configuration Migration**: Using `#[serde(default)]` in Rust and nullish coalescing in TypeScript guarantees zero data loss and prevents deserialization crashes when extending configuration schemas.
 - **Safety Guardrails in Tooling**: Automating `git worktree remove` demands pre-flight dirty checks (`git status --porcelain`) before triggering destructive actions.
 - **Repo-Wide Context Caching & Delta-Patch Updates**: Computing orphan-detection facts (default branch, `branch -vv`, `branch --merged`) once per repository instead of once per worktree cuts subprocess spawns roughly 5x on multi-worktree repos; patching the in-memory worktree list after a single mutation — instead of re-scanning every watched folder — keeps the UI from flashing empty and avoids paying that cost for a one-worktree change.
+- **Atomic Bulk Cleanup & Git Lock Isolation**: Chaining destructive Git commands across multiple repositories requires strictly bounded concurrency: parallelizing across distinct repositories via Rayon (`par_iter`) while strictly sequencing steps within each repository prevents `.git/index.lock` collisions and Windows OS file lock conflicts.
 
 ---
 
@@ -101,6 +103,8 @@ npm run build
   - [ADR 0004: Dual IDE & Terminal Separation and Subprocess Launcher Hardening](docs/adr/0004-ide-terminal-separation-and-subprocess-hardening.md)
   - [ADR 0005: Delta-Patch State Updates and Repo-Wide Context Caching Over Full Rescans](docs/adr/0005-delta-patch-state-and-repo-context-caching.md)
   - [ADR 0006: Branch Cleaner Safety Guards](docs/adr/0006-branch-cleaner-safety-guards.md)
+  - [ADR 0007: Quick Actions and Atomic Bulk Cleanup Architecture](docs/adr/0007-quick-actions-and-atomic-bulk-cleanup.md)
+  - [Formal Contract: Quick Actions & Bulk Cleanup](docs/contracts/quick-actions-and-bulk-cleanup.contract.md)
 - 🤝 [Contributing Guidelines](CONTRIBUTING.md)
 
 ---
@@ -117,6 +121,7 @@ npm run build
 - 🧹 **Limpiador Seguro de Worktrees Huérfanos**: Detecta ramas mergeadas o eliminadas remotamente con validación previa de cambios sin commitear para evitar pérdida accidental de código.
 - 🌿 **Limpiador de Ramas**: Lista todas las ramas locales de los repos gestionados —incluidas las que no tienen worktree propio— marcadas como mergeadas, sin remoto o protegidas, para borrado seguro en lote. La rama por defecto y cualquier rama activa en un worktree nunca se pueden borrar, ni forzando una rama sin mergear.
 - 🔄 **Conmutador de Cuentas GitHub CLI en 1 Clic**: Alterna de forma inmediata entre cuentas de trabajo y personales (`gh auth switch`).
+- ⚡ **Acciones Rápidas y Limpieza Masiva (Quick Actions)**: Mantenimiento atómico del espacio de trabajo en 1 clic para un repositorio individual o todas las carpetas vigiladas a la vez. Ofrece cuatro preajustes: descartar cambios sin commitear protegiendo secretos en `.gitignore`, eliminar worktrees secundarios vinculados, limpiar ramas locales o ejecutar un **Total Fresh Start** en 5 fases hacia la rama por defecto. Protegido con auditoría previa de impacto (commits sin pushear) y confirmaciones armadas (cuenta regresiva de 3 s o confirmación por texto `"RESET"`).
 - 🪟 **Ventana de Escritorio Integrada con el System Tray**: Permanece en la bandeja consumiendo menos de 40 MB de RAM y se abre junto al ícono del tray.
   - **Mostrar/ocultar**: un clic en el ícono del tray, o **Alt+Space** desde cualquier lugar (atajo global; si otra aplicación ya lo usa, el tray sigue funcionando).
   - **Ocultar**: la **X** de la ventana y **Esc** (sin ningún diálogo abierto) ocultan el panel en la bandeja en vez de cerrar la aplicación; para salir, usa el menú del tray.
@@ -147,6 +152,7 @@ Para conocer el desglose detallado de todos los botones de la barra de herramien
 - **Migración resiliente de configuración**: Uso de `#[serde(default)]` en Rust y nullish coalescing en TypeScript para garantizar compatibilidad hacia atrás total y prevenir fallos de deserialización al extender el esquema de configuración.
 - **Guardas de seguridad en herramientas destructivas**: Validación preventiva obligatoria (`git status --porcelain`) antes de ejecutar `git worktree remove`.
 - **Caché de contexto por repositorio y actualizaciones parciales**: Calcular los datos de detección de huérfanos (rama por defecto, `branch -vv`, `branch --merged`) una sola vez por repositorio, en vez de una vez por worktree, reduce ~5x los subprocesos lanzados en repos con varios worktrees; parchar la lista de worktrees en memoria tras una sola mutación —en vez de re-escanear todas las carpetas vigiladas— evita que la interfaz se vea vacía por un instante y evita pagar ese costo por el cambio de un solo worktree.
+- **Limpieza masiva atómica y aislamiento de bloqueos en Git**: Encadenar operaciones destructivas en múltiples repositorios exige una concurrencia estrictamente acotada: paralelizar entre repositorios independientes mediante Rayon (`par_iter`), manteniendo una ejecución estrictamente secuencial dentro de cada repositorio para evitar colisiones por `.git/index.lock` y bloqueos de archivos en Windows.
 
 ---
 
@@ -176,4 +182,6 @@ npx tauri dev
   - [ADR 0004: Separación Dual de IDE y Terminal y Endurecimiento de Subprocesos](docs/adr/0004-ide-terminal-separation-and-subprocess-hardening.md)
   - [ADR 0005: Actualizaciones Parciales de Estado y Caché de Contexto por Repositorio](docs/adr/0005-delta-patch-state-and-repo-context-caching.md)
   - [ADR 0006: Guardas de Seguridad del Limpiador de Ramas](docs/adr/0006-branch-cleaner-safety-guards.md)
+  - [ADR 0007: Arquitectura de Acciones Rápidas y Limpieza Masiva Atómica](docs/adr/0007-quick-actions-and-atomic-bulk-cleanup.md)
+  - [Contrato Formal: Acciones Rápidas y Limpieza Masiva](docs/contracts/quick-actions-and-bulk-cleanup.contract.md)
 - 🤝 [Guía de Contribución](CONTRIBUTING.md)

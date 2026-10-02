@@ -4,6 +4,7 @@ pub mod branch_cleaner;
 pub mod config;
 pub mod gh;
 pub mod git;
+pub mod quick_actions;
 pub mod worktree_cleaner;
 
 /// Tells a target the cleaner intentionally refused apart from one where the git call itself

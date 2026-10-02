@@ -5,6 +5,7 @@ pub mod tray;
 use commands::branches::{remove_branches_batch, scan_branches_for_cleanup};
 use commands::gh_auth::{get_gh_accounts, switch_gh_account};
 use commands::panel::{hide_panel, set_panel_state};
+use commands::quick_actions::{execute_quick_action, get_quick_action_preview};
 use commands::worktrees::{
     checkout_worktree_branch, create_worktree, detach_worktree_head, detect_installed_editors,
     get_app_config, get_worktree_diff_summary, git_discard_worktree_changes, git_stash_worktree,
@@ -80,7 +81,9 @@ pub fn run() {
             get_gh_accounts,
             switch_gh_account,
             set_panel_state,
-            hide_panel
+            hide_panel,
+            get_quick_action_preview,
+            execute_quick_action
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

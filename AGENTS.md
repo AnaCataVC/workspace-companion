@@ -12,13 +12,13 @@ This document serves as the operational manual, architecture reference, and work
 - **`src-tauri/` (Rust Backend)**:
   - System tray initialization & Spotlight floating window positioning (`tauri::tray::TrayIconBuilder`, `tauri-plugin-positioner`, `tray.rs`). `tray.rs` also owns the panel visibility policy (`PanelState`: pinned/busy flags, blur-hide grace window) and `toggle_main_window`, shared by the tray click and the global **Alt+Space** shortcut (`tauri-plugin-global-shortcut`, registered from Rust in `lib.rs`).
   - Safe subprocess execution with `CREATE_NO_WINDOW = 0x08000000` to prevent console flashing on Windows.
-  - Modular services layer in `src-tauri/src/services/` (`git.rs`, `gh.rs`, `worktree_cleaner.rs`, `config.rs`).
-  - Tauri IPC command handlers in `src-tauri/src/commands/` (`worktrees.rs`, `branches.rs`, `gh_auth.rs`, `panel.rs` for `set_panel_state` / `hide_panel`).
+  - Modular services layer in `src-tauri/src/services/` (`git.rs`, `gh.rs`, `worktree_cleaner.rs`, `branch_cleaner.rs`, `config.rs`, `quick_actions.rs`).
+  - Tauri IPC command handlers in `src-tauri/src/commands/` (`worktrees.rs`, `branches.rs`, `gh_auth.rs`, `quick_actions.rs`, `panel.rs` for `set_panel_state` / `hide_panel`).
   - Scan events: `scan_worktrees(scanId)` streams `repo-scanned`, `repo-scan-failed` and `scan-complete`, each carrying the `scanId`; the frontend ignores events from a superseded scan and keeps the previous list until `scan-complete`.
 - **`src/` (Svelte 5 & TypeScript Frontend)**:
   - `App.svelte`: Root floating panel, active views, and global shortcuts.
-  - `lib/components/`: Modular Svelte 5 components (`WorktreeList`, `WorktreeCard`, `NewWorktreeModal`, `BranchSwitcherModal`, `RemoveWorktreeModal`, `WatchFoldersModal`, `GhAccountModal`, `Header`, `AccountFilterBar`).
-  - `lib/stores/`: Reactive store modules (`worktrees.ts`, `ghAuth.ts`, `appConfig.ts`, `editors.ts`, `batchSelection.ts`, ...).
+  - `lib/components/`: Modular Svelte 5 components (`WorktreeList`, `WorktreeCard`, `NewWorktreeModal`, `BranchSwitcherModal`, `RemoveWorktreeModal`, `QuickActionsModal`, `WatchFoldersModal`, `GhAccountModal`, `Header`, `AccountFilterBar`, `BranchBatchDeleteModal`).
+  - `lib/stores/`: Reactive store modules (`worktrees.ts`, `ghAuth.ts`, `appConfig.ts`, `editors.ts`, `batchSelection.ts`, `branchCleaner.ts`, `quickActions.ts`).
   - `lib/actions/`: Svelte actions shared by every modal (`closeOnEscape.ts`, `autofocus.ts` for initial focus + focus trap + focus restore).
   - `lib/utils/`: Pure helpers (`errors.ts`, `paths.ts` for separator-boundary path matching, `protectionReason.ts`).
   - `lib/types.ts`: TypeScript contracts and data structures.
@@ -114,3 +114,4 @@ npx tauri build
 5. **Launcher Disambiguation & Subprocess Safety**: Always distinguish between GUI code editors (`open_in_editor`) and interactive CLI/terminal environments (`open_in_terminal`). Escape literal paths when interpolating into shell commands (e.g. `path.replace('\'', "''")` for PowerShell).
 6. **Direct GUI IDE Binary Resolution**: GUI code editors (VS Code, Cursor, Windsurf, Antigravity IDE) must be resolved directly to their native Win32 `.exe` via `resolve_gui_binary` (inspecting `%LOCALAPPDATA%`, `%ProgramFiles%`, Insiders, and dynamic PATH parent un-nesting) and spawned without shell wrappers to guarantee instant, zero-console execution.
 7. **Release Packaging & Distribution (Setup EXE Invariant)**: For all releases, packaging is strictly limited to the Windows NSIS Setup executable (`Workspace-Companion-v<version>-Setup.exe`) and `SHA256SUMS.txt`. The `tauri.conf.json` bundle targets are restricted to `["nsis"]`. Do not generate or distribute `.msi` or standalone `.exe` portable bundles unless explicitly asked by the user.
+8. **Atomic Bulk Operations & Rayon Concurrency Bounds**: High-impact or multi-step operations (such as Quick Actions and bulk cleanups) must execute server-side in Rust. Concurrency is strictly bounded: parallel processing with Rayon (`par_iter`) is permitted ONLY across distinct repositories, while operations within any single repository must remain strictly sequential to eliminate `.git/index` lock contention and race conditions. Furthermore, destructive cleanups must never invoke `git clean` with `-x` or `-X` (preserving `.env` and `.gitignore` files), and default branches must always remain protected.

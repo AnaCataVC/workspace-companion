@@ -10,7 +10,7 @@ This document provides a comprehensive visual reference and operational guide fo
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ [Icon] WORKSPACE COMPANION             [▦/▤ View] [+ New] [@gh-user] [⚙] [📌] [↻]│ Top Toolbar
+│ [Icon] WORKSPACE COMPANION             [▦/▤ View] [+ New] [@gh-user] [⚙] [⚡] [📌] [↻]│ Top Toolbar
 ├──────────────────────────────────────────────────────────────────────────┤
 │ 🔍 Filter worktree, branch or path...                                    │ Quick Search
 ├──────────────────────────────────────────────────────────────────────────┤
@@ -115,14 +115,56 @@ branches that never had a worktree of their own, which is most of what piles up 
 
 ---
 
-## 6. Multi-Account GitHub CLI Management
+## 6. Quick Actions & Bulk Cleanup (⚡)
+
+Clicking the **Quick Actions** Zap icon (`⚡`) in the top toolbar opens the **Quick Actions & Bulk Cleanup Modal**, providing one-click automated maintenance across managed repositories without manual terminal intervention.
+
+### A. Scope Selector
+At the top of the modal, choose the target scope:
+- **All Watched Repositories**: Executes the action across all repositories discovered in configured watch folders in parallel.
+- **Single Repository**: Narrows the operation to a specific repository selected from the dropdown menu.
+
+### B. Action Presets
+Four bounded presets are available:
+
+1. **Discard Uncommitted Changes (`FileX2`)**:
+   - Reverts modified tracked files to `HEAD` (`git reset --hard HEAD`) and removes untracked files (`git clean -ffd`).
+   - **Zero Secrets Loss**: Strictly preserves `.gitignore`d files (such as `.env` and local secrets). Flag `-x` is forbidden.
+2. **Nuke Linked Worktrees (`Trash2`)**:
+   - Automatically discards uncommitted changes across linked worktrees and removes them (`git worktree remove --force --force`).
+   - Runs `git worktree prune`.
+   - **Root Protection**: The primary/main repository worktree is strictly protected and never deleted.
+3. **Clean Local Branches (`GitBranch`)**:
+   - Deletes secondary local branches (`git branch -D`).
+   - **Safety Invariant**: Strictly protects the repository default branch (`main`/`master`) and any branch currently checked out in an active worktree.
+4. **Total Fresh Start (`Flame`)**:
+   - Comprehensive 5-phase sequential wipe:
+     1. Discard uncommitted changes on all linked worktrees.
+     2. Remove all linked worktrees and prune.
+     3. Switch the main repository worktree to its default branch.
+     4. Discard uncommitted changes on the main worktree.
+     5. Delete all secondary local branches.
+   - Leaves the repository in a pristine state matching the remote default branch.
+
+### C. Pre-Flight Impact Preview & Unpushed Warning
+Before executing, the modal queries an audit preview displaying:
+- Affected repositories, worktrees to remove/discard, dirty file counts, and branches to delete.
+- **Unpushed Commits Warning**: If any branch scheduled for deletion has commits not pushed to its upstream remote (`@{u}..HEAD`), an amber/red warning banner flags the exact number of unpushed commits and branches at risk.
+
+### D. Armed Confirmation Triggers
+- **Standard Presets (1–3)**: Uses a 2-step armed button with a 3-second safety countdown (`Arm Action` → `Confirm Execution (3s)`).
+- **Total Fresh Start (Preset 4)**: Requires explicitly typing `"RESET"` into a confirmation text field to unlock the red execution button.
+
+---
+
+## 7. Multi-Account GitHub CLI Management
 
 - **Global CLI Identity**: Click the **`@username`** badge in the top toolbar to switch your active global GitHub CLI account (`gh auth switch`).
 - **Repository Context**: If a repository belongs to a specific organization or work account (e.g. `@CataVillalobosC`), Workspace Companion highlights the active profile and ensures commit authorship and PR commands target the correct account.
 
 ---
 
-## 7. Fast Worktree Creation
+## 8. Fast Worktree Creation
 
 At the bottom of each repository section:
 1. Type a new branch name into the **`+ Fast Worktree: branch-name`** field.
@@ -131,14 +173,14 @@ At the bottom of each repository section:
 
 ---
 
-## 8. Keyboard Shortcuts
+## 9. Keyboard Shortcuts
 
 Workspace Companion is designed to be operated without leaving the keyboard:
 
 | Shortcut | Context | Action |
 | :--- | :--- | :--- |
 | `Alt+Space` | Global | Toggle the floating window |
-| `Escape` | Any open modal | Close it (Branch Switcher, New Worktree, Watched Folders, Remove Worktree, Batch Delete, Branch Batch Delete, GitHub Account) |
+| `Escape` | Any open modal | Close it (Branch Switcher, New Worktree, Watched Folders, Quick Actions, Remove Worktree, Batch Delete, Branch Batch Delete, GitHub Account) |
 | `↑` / `↓` | Branch Switcher Modal | Move the highlighted branch |
 | `Enter` | Branch Switcher Modal | Checkout the highlighted branch |
 | `Enter` / `Escape` | Fast Worktree Creator & New Worktree Modal branch field | Create now / clear and collapse |

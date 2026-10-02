@@ -3,7 +3,7 @@
   import { branchSearchFilter } from '../stores/branchCleaner';
   import { activeGhAccount } from '../stores/ghAuth';
   import { viewDensity } from '../stores/appConfig';
-  import { RefreshCw, Pin, PinOff, Github, Search, Plus, Settings2, LayoutList, LayoutGrid, GitBranch, FolderTree } from 'lucide-svelte';
+  import { RefreshCw, Pin, PinOff, Github, Search, Plus, Settings2, LayoutList, LayoutGrid, GitBranch, FolderTree, Zap } from 'lucide-svelte';
 
   export let activeView: 'worktrees' | 'branches' = 'worktrees';
   export let isRefreshing: boolean = false;
@@ -12,6 +12,7 @@
   export let onOpenGhModal: () => void;
   export let onOpenNewWorktreeModal: () => void;
   export let onOpenSettingsModal: () => void;
+  export let onOpenQuickActionsModal: () => void;
   export let onTogglePin: () => void;
 
   function toggleDensity() {
@@ -104,6 +105,17 @@
         class="p-1.5 rounded-md hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 transition-colors"
       >
         <Settings2 size={14} />
+      </button>
+
+      <!-- Quick Actions Button -->
+      <button
+        type="button"
+        on:click={onOpenQuickActionsModal}
+        title="Quick Actions & Bulk Cleanup"
+        aria-label="Quick Actions & Bulk Cleanup"
+        class="p-1.5 rounded-md hover:bg-indigo-950/50 text-indigo-400 hover:text-indigo-300 transition-colors"
+      >
+        <Zap size={14} class="fill-indigo-400/20" />
       </button>
 
       <!-- Pin Window Toggle -->

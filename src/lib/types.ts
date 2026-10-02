@@ -218,3 +218,32 @@ export interface BranchBatchDeleteSummary {
   deletedBranches: DeletedBranchRef[];
   errors: BranchBatchItemError[];
 }
+
+export type QuickActionPreset = 'discardUncommitted' | 'nukeWorktrees' | 'cleanBranches' | 'totalFreshStart';
+
+export type QuickActionScope = 
+  | { singleRepo: { repoPath: string } }
+  | 'allWatchedRepos';
+
+export interface QuickActionPreview {
+  preset: QuickActionPreset;
+  reposCount: number;
+  worktreesToRemove: string[];
+  worktreesToDiscard: string[];
+  dirtyFilesCount: number;
+  branchesToDelete: string[];
+  unpushedBranchesCount: number;
+  totalUnpushedCommits: number;
+  protectedDefaultBranches: string[];
+}
+
+export interface QuickActionResult {
+  preset: QuickActionPreset;
+  success: boolean;
+  worktreesRemoved: number;
+  worktreesDiscarded: number;
+  branchesDeleted: number;
+  warnings: string[];
+  errors: string[];
+}
+
