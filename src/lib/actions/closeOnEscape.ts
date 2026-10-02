@@ -16,6 +16,8 @@ export const closeOnEscape: Action<Window, CloseOnEscapeOptions> = (node, option
 
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape' && current.enabled()) {
+      event.preventDefault();
+      event.stopPropagation();
       current.onClose();
     }
   }

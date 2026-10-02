@@ -93,9 +93,10 @@ The frontend is built with **Svelte 5** leveraging modern reactive stores and cl
   - `BranchList.svelte`, `BranchItemRow.svelte` & `BranchCard.svelte`: Branch Cleaner list grouped by repository, in the same Compact/Detailed densities as the worktree list. Neither branch view carries a per-branch delete action — branch deletion is batch-only by design, so the reviewed batch flow stays the single destructive path.
   - `BranchStatusBadges.svelte`: The Default / In-worktree / Merged / Remote-gone badge set, shared by the row and the card so the two densities can't describe the same branch differently.
   - `BranchFilterBar.svelte`: Status filter chips (All/Merged/Remote gone/Protected) for the Branch Cleaner, same single-pass tally pattern as `AccountFilterBar.svelte`, plus the cross-repository "select all filtered" control.
+  - `DiscardChangesPanel.svelte`: Confirmation panel to permanently discard uncommitted worktree changes (`git reset --hard` + `git clean -ffd`) with an arming timer delay, file preview, error reporting, and safe unmount cleanup.
   - `BranchBatchDeleteModal.svelte` & `BranchActionBar.svelte`: Branch Cleaner's review/confirm modal and floating selection dock, mirroring `BatchDeleteModal.svelte`/`BatchActionBar.svelte` with "unmerged" in place of "dirty".
 - `src/lib/actions/`:
-  - `closeOnEscape.ts`: Shared Svelte action wiring `Escape` to a modal's close handler (`{ enabled, onClose }`), used by every modal so Escape-to-close can't silently go missing from a new one.
+  - `closeOnEscape.ts`: Shared Svelte action wiring `Escape` to a modal/popover's close handler (`{ enabled, onClose }`), invoking `preventDefault()` and `stopPropagation()` so dismissing dialogs never bubbles to the top-level window handler.
 - `src/lib/utils/`:
   - `protectionReason.ts`: Single source for the wording of *why* a branch or worktree is protected or destructive to delete, so a row's tooltip and a dialog's warning can't drift apart. It describes the server-side guards (ADR 0003, ADR 0006); it never enforces them.
 - `src/lib/stores/`:

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -21,6 +21,7 @@ impl GhService {
     pub fn build_command(args: &[&str]) -> Command {
         let mut cmd = Command::new("gh");
         cmd.args(args);
+        cmd.stdin(Stdio::null());
 
         #[cfg(target_os = "windows")]
         {

@@ -147,6 +147,9 @@ impl GitService {
         let mut cmd = Command::new("git");
         cmd.current_dir(working_dir);
         cmd.args(args);
+        cmd.stdin(Stdio::null());
+        cmd.env("GIT_TERMINAL_PROMPT", "0");
+        cmd.env("GIT_OPTIONAL_LOCKS", "0");
 
         #[cfg(target_os = "windows")]
         {
@@ -1061,7 +1064,16 @@ impl GitService {
         }
 
         let reset_out = Self::run_git(wt, &["reset", "--hard", "HEAD"])?;
-        let clean_out = Self::run_git(wt, &["clean", "-fd"])?;
+        let clean_out = match Self::run_git(wt, &["clean", "-ffd"]) {
+            Ok(out) => out,
+            Err(e) => {
+                if e.contains("warning: failed to remove") || e.contains("Permission denied") {
+                    format!("Tracked changes reset, but some untracked files could not be removed (in use by another process):\n{}", e)
+                } else {
+                    return Err(e);
+                }
+            }
+        };
 
         Ok(format!("{}\n{}", reset_out, clean_out).trim().to_string())
     }
@@ -1248,6 +1260,102 @@ bare
     #[test]
     fn test_resolve_gui_binary_explorer_or_invalid() {
         assert!(GitService::resolve_gui_binary("non_existent_editor_123").is_none());
+    }
+
+    #[test]
+    fn test_build_command_env_and_security_guarantees() {
+        let dir = tempfile::tempdir().expect("Failed to create temp dir");
+        let cmd = GitService::build_command(dir.path(), &["status"]);
+
+        let envs: std::collections::HashMap<_, _> = cmd.get_envs().collect();
+        assert_eq!(
+            envs.get(std::ffi::OsStr::new("GIT_TERMINAL_PROMPT")),
+            Some(&Some(std::ffi::OsStr::new("0"))),
+            "Contract violation: GIT_TERMINAL_PROMPT must be set to 0"
+        );
+        assert_eq!(
+            envs.get(std::ffi::OsStr::new("GIT_OPTIONAL_LOCKS")),
+            Some(&Some(std::ffi::OsStr::new("0"))),
+            "Contract violation: GIT_OPTIONAL_LOCKS must be set to 0"
+        );
+
+        assert_eq!(
+            cmd.get_current_dir(),
+            Some(dir.path()),
+            "Working directory must match the requested path"
+        );
+    }
+
+    #[test]
+    fn test_discard_worktree_changes_clean_discard_scenario_1() {
+        let dir = tempfile::tempdir().expect("Failed to create temp dir");
+        let path = dir.path();
+
+        let run_cmd = |args: &[&str]| {
+            let status = std::process::Command::new("git")
+                .args(args)
+                .current_dir(path)
+                .status()
+                .expect("Failed to execute git setup command");
+            assert!(status.success(), "Git setup command failed: {:?}", args);
+        };
+
+        run_cmd(&["init"]);
+        run_cmd(&["config", "user.email", "cleanroom-test@example.com"]);
+        run_cmd(&["config", "user.name", "Cleanroom Tester"]);
+
+        let tracked_file = path.join("tracked.txt");
+        std::fs::write(&tracked_file, "initial tracked content\n").expect("Failed to write tracked file");
+        run_cmd(&["add", "tracked.txt"]);
+        run_cmd(&["commit", "-m", "Initial commit"]);
+
+        // 1. Dirty tracked file
+        std::fs::write(&tracked_file, "modified dirty content\n").expect("Failed to modify tracked file");
+
+        // 2. Add untracked files & nested untracked directory
+        let untracked_file = path.join("untracked_file.txt");
+        std::fs::write(&untracked_file, "new untracked file\n").expect("Failed to create untracked file");
+
+        let untracked_dir = path.join("untracked_nested_dir");
+        std::fs::create_dir_all(&untracked_dir).expect("Failed to create nested dir");
+        let nested_file = untracked_dir.join("nested.txt");
+        std::fs::write(&nested_file, "nested untracked content\n").expect("Failed to create nested file");
+
+        // Execute discard
+        let result = GitService::discard_worktree_changes(path);
+        assert!(
+            result.is_ok(),
+            "Contract Scenario 1: discard_worktree_changes must return Ok, got: {:?}",
+            result.err()
+        );
+
+        // Assert tracked file is restored to initial content
+        let restored_content = std::fs::read_to_string(&tracked_file).expect("Failed to read tracked file");
+        assert_eq!(
+            restored_content.trim(),
+            "initial tracked content",
+            "Tracked file must be restored to commit HEAD"
+        );
+
+        // Assert untracked files and directories are completely wiped out
+        assert!(
+            !untracked_file.exists(),
+            "Contract Scenario 1: untracked file must be removed by git clean -ffd"
+        );
+        assert!(
+            !untracked_dir.exists(),
+            "Contract Scenario 1: untracked directory must be removed by git clean -ffd"
+        );
+
+        let status_output = std::process::Command::new("git")
+            .args(&["status", "--porcelain"])
+            .current_dir(path)
+            .output()
+            .expect("Failed to get git status");
+        assert!(
+            status_output.stdout.is_empty(),
+            "Working tree must be completely clean after discard"
+        );
     }
 }
 

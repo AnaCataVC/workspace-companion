@@ -321,18 +321,11 @@ impl WorktreeCleanerService {
         let mut worktrees = GitService::parse_worktree_porcelain(&raw_worktrees);
         Self::mark_main_worktree(&mut worktrees);
 
-        let target_canonical = Path::new(worktree_path)
-            .canonicalize()
-            .unwrap_or_else(|_| PathBuf::from(worktree_path));
+        let wanted = Self::comparable_path(Path::new(worktree_path));
 
         let mut worktree = worktrees
             .into_iter()
-            .find(|wt| {
-                let entry_canonical = Path::new(&wt.path)
-                    .canonicalize()
-                    .unwrap_or_else(|_| PathBuf::from(&wt.path));
-                entry_canonical == target_canonical
-            })
+            .find(|wt| Self::comparable_path(Path::new(&wt.path)) == wanted)
             .ok_or_else(|| format!("Worktree not found at path: {}", worktree_path))?;
 
         // Cheap here: unlike the repo-wide scan loop, only one worktree needs this context.
@@ -630,5 +623,100 @@ mod tests {
         assert!(res.unwrap_err().contains("main"));
 
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_build_single_worktree_info_case_and_slash_insensitivity_scenario_3() {
+        let dir = tempfile::tempdir().expect("Failed to create temp dir");
+        let path = dir.path();
+
+        let run_cmd = |args: &[&str]| {
+            let status = std::process::Command::new("git")
+                .args(args)
+                .current_dir(path)
+                .status()
+                .expect("Failed to execute git command");
+            assert!(status.success(), "Git command failed: {:?}", args);
+        };
+
+        run_cmd(&["init"]);
+        run_cmd(&["config", "user.email", "cleanroom-test@example.com"]);
+        run_cmd(&["config", "user.name", "Cleanroom Tester"]);
+
+        let dummy_file = path.join("README.md");
+        std::fs::write(&dummy_file, "# Test Repo\n").expect("Failed to write dummy file");
+        run_cmd(&["add", "README.md"]);
+        run_cmd(&["commit", "-m", "Initial commit"]);
+
+        let repo_path_str = path.to_str().expect("Valid UTF-8 path");
+
+        // 1. Original path
+        let info_original = WorktreeCleanerService::build_single_worktree_info(repo_path_str, repo_path_str);
+        assert!(
+            info_original.is_ok(),
+            "Failed to find worktree with canonical path: {:?}",
+            info_original.err()
+        );
+
+        // 2. Slash-inverted path (/ vs \)
+        let forward_slashed = repo_path_str.replace('\\', "/");
+        let info_slashed = WorktreeCleanerService::build_single_worktree_info(repo_path_str, &forward_slashed);
+        assert!(
+            info_slashed.is_ok(),
+            "Contract Scenario 3 violation: Must match path regardless of slash direction (/ vs \\): {:?}",
+            info_slashed.err()
+        );
+
+        // 3. Drive letter casing permutation (c: vs C:)
+        if let Some(first_char) = repo_path_str.chars().next() {
+            if first_char.is_ascii_alphabetic() {
+                let inverted_drive = if first_char.is_ascii_uppercase() {
+                    first_char.to_ascii_lowercase().to_string() + &repo_path_str[1..]
+                } else {
+                    first_char.to_ascii_uppercase().to_string() + &repo_path_str[1..]
+                };
+
+                let info_drive = WorktreeCleanerService::build_single_worktree_info(repo_path_str, &inverted_drive);
+                assert!(
+                    info_drive.is_ok(),
+                    "Contract Scenario 3 violation: Must match path regardless of drive letter casing: {:?}",
+                    info_drive.err()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_build_single_worktree_info_nonexistent_returns_err() {
+        let dir = tempfile::tempdir().expect("Failed to create temp dir");
+        let path = dir.path();
+
+        let run_cmd = |args: &[&str]| {
+            let status = std::process::Command::new("git")
+                .args(args)
+                .current_dir(path)
+                .status()
+                .expect("Failed to execute git command");
+            assert!(status.success(), "Git command failed: {:?}", args);
+        };
+
+        run_cmd(&["init"]);
+        run_cmd(&["config", "user.email", "cleanroom-test@example.com"]);
+        run_cmd(&["config", "user.name", "Cleanroom Tester"]);
+
+        let dummy_file = path.join("README.md");
+        std::fs::write(&dummy_file, "# Test Repo\n").expect("Failed to write dummy file");
+        run_cmd(&["add", "README.md"]);
+        run_cmd(&["commit", "-m", "Initial commit"]);
+
+        let repo_path_str = path.to_str().expect("Valid UTF-8 path");
+        let fake_path = path.join("non_existent_worktree_path_12345");
+        let fake_path_str = fake_path.to_str().expect("Valid UTF-8 path");
+
+        let result = WorktreeCleanerService::build_single_worktree_info(repo_path_str, fake_path_str);
+        assert!(
+            result.is_err(),
+            "build_single_worktree_info must return Err when worktree does not exist"
+        );
     }
 }

@@ -58,6 +58,7 @@
 
   function cancelDiscardConfirmation() {
     isConfirmingDiscard = false;
+    isDiscarding = false;
   }
 
   function handleDiscarded(updatedWt: WorktreeInfo) {
@@ -137,9 +138,9 @@
 
   let searchInput: HTMLInputElement | null = null;
 
-  // Closing mid-checkout or mid-stash/discard would hide the outcome of an operation still running.
+  // Closing mid-checkout would hide the outcome of an operation still running.
   function requestClose() {
-    if (isSwitching || isResolvingDirty) return;
+    if (isSwitching) return;
     dispatch('close');
   }
 
@@ -203,7 +204,7 @@
         <button
           type="button"
           on:click={requestClose}
-          disabled={isSwitching || isResolvingDirty}
+          disabled={isSwitching}
           aria-label="Close"
           class="text-neutral-400 hover:text-neutral-300 p-1 rounded-md hover:bg-neutral-800 transition-colors"
         >

@@ -6,7 +6,7 @@ This document provides a comprehensive visual reference and operational guide fo
 
 ## 1. Floating Dashboard Overview
 
-**Workspace Companion** operates as a Spotlight-style floating window that slides out from the Windows System Tray upon clicking the tray icon or pressing the global shortcut (`Ctrl+Shift+W`).
+**Workspace Companion** operates as a Spotlight-style floating window that slides out from the Windows System Tray upon clicking the tray icon or pressing the global shortcut (`Alt+Space`).
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -137,7 +137,7 @@ Workspace Companion is designed to be operated without leaving the keyboard:
 
 | Shortcut | Context | Action |
 | :--- | :--- | :--- |
-| `Ctrl+Shift+W` | Global | Toggle the floating window |
+| `Alt+Space` | Global | Toggle the floating window |
 | `Escape` | Any open modal | Close it (Branch Switcher, New Worktree, Watched Folders, Remove Worktree, Batch Delete, Branch Batch Delete, GitHub Account) |
 | `↑` / `↓` | Branch Switcher Modal | Move the highlighted branch |
 | `Enter` | Branch Switcher Modal | Checkout the highlighted branch |

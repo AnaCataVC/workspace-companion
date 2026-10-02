@@ -4,7 +4,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { toErrorMessage } from '../utils/errors';
   import { notifications } from '../stores/notifications';
-  import { AlertTriangle, Loader2 } from 'lucide-svelte';
+  import { AlertTriangle, Loader2, X } from 'lucide-svelte';
 
   export let worktreePath: string;
   export let uncommittedFilesCount: number = 0;
@@ -25,6 +25,7 @@
   let armTimer: ReturnType<typeof setTimeout> | null = null;
   let discardPreview: WorktreeDiffSummary | null = null;
   let discardPreviewError: string | null = null;
+  let discardError: string | null = null;
   let isDiscarding = false;
 
   $: onbusychange(isDiscarding);
@@ -46,26 +47,42 @@
 
   onDestroy(() => {
     if (armTimer !== null) clearTimeout(armTimer);
+    onbusychange(false);
   });
 
   async function handleConfirm() {
     if (!isDiscardArmed || isDiscarding || disabled) return;
     isDiscarding = true;
+    discardError = null;
     try {
       const updatedWt = await invoke<WorktreeInfo>('git_discard_worktree_changes', { worktreePath });
       ondiscarded(updatedWt);
     } catch (err: unknown) {
-      notifications.error('Failed to discard changes', toErrorMessage(err));
+      const msg = toErrorMessage(err, 'Failed to discard changes');
+      discardError = msg;
+      notifications.error('Failed to discard changes', msg);
     } finally {
       isDiscarding = false;
     }
   }
 </script>
 
-<div class="rounded-md bg-neutral-950/80 border border-rose-800/60 p-2 flex flex-col gap-2" role="alertdialog" aria-label="Confirm discarding changes">
-  <p class="text-[11px] text-rose-200">
-    These changes will be permanently discarded (git reset --hard + git clean -fd):
-  </p>
+<div class="rounded-md bg-neutral-950/90 border border-rose-800/60 p-2.5 flex flex-col gap-2 shadow-xl" role="alertdialog" aria-label="Confirm discarding changes">
+  <div class="flex items-center justify-between gap-1">
+    <p class="text-[11px] text-rose-200 font-medium">
+      These changes will be permanently discarded:
+    </p>
+    <button
+      type="button"
+      on:click={oncancel}
+      class="text-neutral-400 hover:text-neutral-200 p-0.5 rounded hover:bg-neutral-800 transition-colors"
+      aria-label="Cancel"
+      title="Close panel"
+    >
+      <X size={13} />
+    </button>
+  </div>
+
   {#if discardPreview}
     <div class="max-h-28 overflow-y-auto space-y-0.5 font-mono text-[11px] text-neutral-300">
       {#each discardPreview.modifiedFiles as file}
@@ -82,7 +99,15 @@
       <Loader2 size={11} class="animate-spin" /> Listing files...
     </p>
   {/if}
-  <div class="flex items-center justify-end gap-2">
+
+  {#if discardError}
+    <div class="p-1.5 rounded bg-rose-950/80 border border-rose-700/60 text-rose-300 text-[11px] flex flex-col gap-0.5">
+      <span class="font-semibold text-rose-200">Error:</span>
+      <span class="break-words font-mono text-[10px]">{discardError}</span>
+    </div>
+  {/if}
+
+  <div class="flex items-center justify-end gap-2 pt-1 border-t border-neutral-800/60">
     <button
       type="button"
       on:click={oncancel}
@@ -102,7 +127,7 @@
       {:else}
         <AlertTriangle size={12} />
       {/if}
-      <span>Discard permanently</span>
+      <span>{isDiscarding ? 'Discarding...' : 'Discard permanently'}</span>
     </button>
   </div>
 </div>
