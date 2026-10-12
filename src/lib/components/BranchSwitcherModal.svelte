@@ -17,9 +17,10 @@
   } from 'lucide-svelte';
   import { closeOnEscape } from '../actions/closeOnEscape';
   import { autofocus } from '../actions/autofocus';
-  import { invoke } from '@tauri-apps/api/core';
+  import { invokeTauri } from '../utils/ipc';
   import { appConfig } from '../stores/appConfig';
   import { toErrorMessage } from '../utils/errors';
+  import { getShortBranch } from '../utils/paths';
   import DiscardChangesPanel from './DiscardChangesPanel.svelte';
 
   export let isOpen: boolean = false;
@@ -74,7 +75,7 @@
     errorMessage = null;
     actionStatusMessage = null;
     try {
-      const updatedWt = await invoke<WorktreeInfo>('git_stash_worktree', {
+      const updatedWt = await invokeTauri<WorktreeInfo>('git_stash_worktree', {
         worktreePath: worktree.path,
         message: 'Stash before branch switch - Workspace Companion'
       });
@@ -91,7 +92,7 @@
   async function handleOpenInEditor() {
     if (!worktree) return;
     try {
-      await invoke('open_in_editor', {
+      await invokeTauri('open_in_editor', {
         editor: $appConfig.defaultEditor || 'vscode',
         path: worktree.path
       });
@@ -120,11 +121,6 @@
   }
 
   $: branchButtons[highlightedIndex]?.scrollIntoView({ block: 'nearest' });
-
-  function getShortBranch(fullBranch: string | null): string {
-    if (!fullBranch) return '(detached HEAD)';
-    return fullBranch.replace('refs/heads/', '');
-  }
 
   function handleSelectBranch(branch: BranchEntry) {
     if (!worktree || branch.isCurrent || branch.isLockedByOther || isSwitching || isResolvingDirty || worktree.isDirty) {

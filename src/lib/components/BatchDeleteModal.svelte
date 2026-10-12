@@ -6,8 +6,9 @@
   import { autofocus } from '../actions/autofocus';
   import { forceBatchWorktreeDelete } from '../stores/forceDeleteIntent';
   import { worktreeProtectionReason } from '../utils/protectionReason';
-  import { invoke } from '@tauri-apps/api/core';
+  import { invokeTauri } from '../utils/ipc';
   import { toErrorMessage } from '../utils/errors';
+  import { getShortBranch } from '../utils/paths';
 
   export let isOpen: boolean = false;
   export let targets: BatchDeleteTarget[] = [];
@@ -75,11 +76,6 @@
     });
   }
 
-  function getShortBranch(fullBranch: string | null | undefined): string {
-    if (!fullBranch) return '(detached HEAD)';
-    return fullBranch.replace('refs/heads/', '');
-  }
-
   let unlockingPaths = new Set<string>();
 
   function isLockedError(errorMsg: string): boolean {
@@ -96,13 +92,13 @@
 
     try {
       // 1. Unlock worktree via git worktree unlock
-      await invoke('git_unlock_worktree', {
+      await invokeTauri('git_unlock_worktree', {
         repoPath: target.repoPath,
         worktreePath: target.worktreePath
       });
 
       // 2. Remove worktree with force
-      await invoke('remove_worktree', {
+      await invokeTauri('remove_worktree', {
         repoPath: target.repoPath,
         worktreePath: target.worktreePath,
         force: true

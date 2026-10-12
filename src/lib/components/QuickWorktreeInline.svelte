@@ -1,7 +1,8 @@
 <script lang="ts">
   import { Plus, Settings2, Loader2, CornerDownLeft, AlertCircle } from 'lucide-svelte';
   import { createEventDispatcher, onDestroy } from 'svelte';
-  import { invoke } from '@tauri-apps/api/core';
+  import { invokeTauri } from '../utils/ipc';
+  import { getDirectoryName } from '../utils/paths';
   import type { CreateWorktreeResult, SuggestWorktreePathResult, SupportedEditor, WorktreeInfo } from '../types';
   import { appConfig } from '../stores/appConfig';
   import { toErrorMessage } from '../utils/errors';
@@ -38,7 +39,7 @@
     }
     suggestTimer = setTimeout(async () => {
       try {
-        const res = await invoke<SuggestWorktreePathResult>('suggest_worktree_path', { repoPath, branchName });
+        const res = await invokeTauri<SuggestWorktreePathResult>('suggest_worktree_path', { repoPath, branchName });
         if (seq === suggestSeq) suggestedPath = res.suggestedPath;
       } catch {
         // Preview only: the create call reports any real error.
@@ -50,11 +51,6 @@
   onDestroy(() => {
     if (suggestTimer) clearTimeout(suggestTimer);
   });
-
-  function folderName(fullPath: string): string {
-    const parts = fullPath.replace(/\\/g, '/').split('/');
-    return parts[parts.length - 1] || fullPath;
-  }
 
   function handleFocus() {
     isExpanded = true;
@@ -90,13 +86,13 @@
 
     try {
       // 1. Get full suggested path from backend
-      const pathRes = await invoke<SuggestWorktreePathResult>('suggest_worktree_path', {
+      const pathRes = await invokeTauri<SuggestWorktreePathResult>('suggest_worktree_path', {
         repoPath,
         branchName
       });
 
       // 2. Create worktree
-      const createRes = await invoke<CreateWorktreeResult>('create_worktree', {
+      const createRes = await invokeTauri<CreateWorktreeResult>('create_worktree', {
         repoPath,
         targetPath: pathRes.suggestedPath,
         baseBranch: defaultBranch,
@@ -157,7 +153,7 @@
           class="text-[11px] text-indigo-300 font-mono hidden md:inline-block bg-indigo-950/70 border border-indigo-800/50 px-1.5 py-0.2 rounded truncate max-w-[220px]"
           title={`New branch from ${defaultBranch}, created at ${suggestedPath}`}
         >
-          from {defaultBranch} → {folderName(suggestedPath)}
+          from {defaultBranch} → {getDirectoryName(suggestedPath)}
         </span>
       {/if}
     </div>

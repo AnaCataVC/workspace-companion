@@ -2,7 +2,7 @@
   import type { BranchStatusEntry, BranchBatchDeleteSummary, WorktreeInfo } from '../types';
   import { Unlock, X, AlertTriangle, ShieldAlert, Trash2, GitBranch, Loader2 } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
-  import { invoke } from '@tauri-apps/api/core';
+  import { invokeTauri } from '../utils/ipc';
   import { closeOnEscape } from '../actions/closeOnEscape';
   import { autofocus } from '../actions/autofocus';
   import { toErrorMessage } from '../utils/errors';
@@ -63,7 +63,7 @@
   async function deleteBranch(force: boolean) {
     if (!branch) return;
     try {
-      const summary = await invoke<BranchBatchDeleteSummary>('remove_branches_batch', {
+      const summary = await invokeTauri<BranchBatchDeleteSummary>('remove_branches_batch', {
         targets: [{ repoPath: branch.repoPath, branchName: branch.name, force }]
       });
 
@@ -94,7 +94,7 @@
     isBusy = true;
     errorMessage = null;
     try {
-      await invoke('detach_worktree_head', { worktreePath: branch.checkedOutWorktreePath });
+      await invokeTauri('detach_worktree_head', { worktreePath: branch.checkedOutWorktreePath });
       await deleteBranch(false);
     } catch (err: unknown) {
       errorMessage = toErrorMessage(err, 'Failed to detach the worktree');
@@ -107,7 +107,7 @@
     isBusy = true;
     errorMessage = null;
     try {
-      await invoke('remove_worktree', {
+      await invokeTauri('remove_worktree', {
         repoPath: branch.repoPath,
         worktreePath: branch.checkedOutWorktreePath,
         force: Boolean(worktree?.locked)

@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import { invoke } from '@tauri-apps/api/core';
+import { invokeTauri } from '../utils/ipc';
 import type {
   QuickActionPreset,
   QuickActionScope,
@@ -29,7 +29,7 @@ export async function fetchQuickActionPreview(
   quickActionPreviewError.set(null);
 
   try {
-    const preview = await invoke<QuickActionPreview>('get_quick_action_preview', {
+    const preview = await invokeTauri<QuickActionPreview>('get_quick_action_preview', {
       preset,
       scope
     });
@@ -53,7 +53,7 @@ export async function runQuickAction(
   quickActionResult.set(null);
 
   try {
-    const result = await invoke<QuickActionResult>('execute_quick_action', {
+    const result = await invokeTauri<QuickActionResult>('execute_quick_action', {
       preset,
       scope
     });

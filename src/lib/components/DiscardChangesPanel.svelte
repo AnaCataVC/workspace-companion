@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import type { WorktreeInfo, WorktreeDiffSummary } from '../types';
-  import { invoke } from '@tauri-apps/api/core';
+  import { invokeTauri } from '../utils/ipc';
   import { toErrorMessage } from '../utils/errors';
   import { notifications } from '../stores/notifications';
   import { AlertTriangle, Loader2, X } from 'lucide-svelte';
@@ -39,7 +39,7 @@
       isDiscardArmed = true;
     }, DISCARD_ARM_DELAY_MS);
     try {
-      discardPreview = await invoke<WorktreeDiffSummary>('get_worktree_diff_summary', { worktreePath });
+      discardPreview = await invokeTauri<WorktreeDiffSummary>('get_worktree_diff_summary', { worktreePath });
     } catch (err: unknown) {
       discardPreviewError = toErrorMessage(err, 'Could not list the files that will be discarded');
     }
@@ -55,7 +55,7 @@
     isDiscarding = true;
     discardError = null;
     try {
-      const updatedWt = await invoke<WorktreeInfo>('git_discard_worktree_changes', { worktreePath });
+      const updatedWt = await invokeTauri<WorktreeInfo>('git_discard_worktree_changes', { worktreePath });
       ondiscarded(updatedWt);
     } catch (err: unknown) {
       const msg = toErrorMessage(err, 'Failed to discard changes');

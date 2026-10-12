@@ -26,6 +26,7 @@
   import { closeOnEscape } from '../actions/closeOnEscape';
   import { autofocus } from '../actions/autofocus';
   import { worktreeProtectionReason } from '../utils/protectionReason';
+  import { getShortBranch, getDirectoryName } from '../utils/paths';
 
   export let worktree: WorktreeInfo;
   export let repoPath: string = '';
@@ -93,17 +94,6 @@
       uncommittedFilesCount: worktree.uncommittedFilesCount
     });
   }
-
-  function getShortBranch(fullBranch: string | null): string {
-    if (!fullBranch) return '(detached HEAD)';
-    return fullBranch.replace('refs/heads/', '');
-  }
-
-  function getDirectoryName(fullPath: string): string {
-    const parts = fullPath.replace(/\\/g, '/').split('/');
-    return parts[parts.length - 1] || fullPath;
-  }
-
 </script>
 
 <svelte:window use:closeOnEscape={{ enabled: () => isDiscardPopoverOpen, onClose: closeDiscardPopover }} />

@@ -86,6 +86,17 @@
   <div class="flex items-center gap-1 flex-shrink-0 ml-2">
     <BranchStatusBadges {branch} size="sm" />
 
+    {#if isReleasable}
+      <button
+        type="button"
+        on:click={() => dispatch('requestRelease', branch)}
+        title="Free this branch from its worktree and delete it"
+        class="p-1 rounded hover:bg-amber-950/80 text-amber-400 hover:text-amber-300 border border-transparent hover:border-amber-900/50 transition-colors"
+      >
+        <Unlock size={12} />
+      </button>
+    {/if}
+
     <button
       type="button"
       on:click={() => dispatch('requestCheckout', branch)}

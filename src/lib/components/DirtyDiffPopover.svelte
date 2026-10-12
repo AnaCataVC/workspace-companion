@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Flame } from 'lucide-svelte';
   import type { WorktreeDiffSummary } from '../types';
-  import { invoke } from '@tauri-apps/api/core';
+  import { invokeTauri } from '../utils/ipc';
   import { toErrorMessage } from '../utils/errors';
 
   export let worktreePath: string;
@@ -55,7 +55,7 @@
     isLoadingDiff = true;
     diffError = null;
     try {
-      diffSummary = await invoke<WorktreeDiffSummary>('get_worktree_diff_summary', {
+      diffSummary = await invokeTauri<WorktreeDiffSummary>('get_worktree_diff_summary', {
         worktreePath
       });
     } catch (err: unknown) {
