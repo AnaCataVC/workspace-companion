@@ -237,3 +237,59 @@ fn test_unmerged_branch_requires_force() {
     let gone = run_git(repo_path, &["branch", "--list"]).expect("branch --list failed");
     assert!(!gone.contains("feat/unmerged"), "branch must be gone after force delete");
 }
+
+#[test]
+fn test_merged_branch_deletes_when_head_is_on_feature_branch() {
+    let repo_temp = create_test_repo();
+    let repo_path = repo_temp.path();
+    let repo_path_str = repo_path.to_str().unwrap().to_string();
+
+    // 1. Create a feature branch, commit a file, and merge it into main.
+    run_git(repo_path, &["branch", "feat/merged-feature"]).expect("create branch failed");
+    let wt_temp = tempfile::tempdir().expect("failed to create wt temp dir");
+    let wt_path = wt_temp.path().join("wt-merged-source");
+    GitService::create_worktree(
+        &repo_path_str,
+        wt_path.to_str().unwrap(),
+        "feat/merged-feature",
+        None,
+    )
+    .expect("create worktree failed");
+    fs::write(wt_path.join("merged.txt"), "merged content\n").expect("write file failed");
+    run_git(&wt_path, &["add", "merged.txt"]).expect("add failed");
+    run_git(&wt_path, &["commit", "-m", "Commit on feat/merged-feature"]).expect("commit failed");
+    run_git(repo_path, &["worktree", "remove", "--force", wt_path.to_str().unwrap()])
+        .expect("remove worktree failed");
+    run_git(
+        repo_path,
+        &["merge", "feat/merged-feature", "--no-ff", "-m", "Merge feat/merged-feature"],
+    )
+    .expect("merge into main failed");
+
+    // 2. Switch the main repository worktree (HEAD) to a completely different feature branch.
+    run_git(repo_path, &["checkout", "-b", "feat/active-wip"]).expect("checkout active-wip failed");
+
+    // 3. Request batch delete of `feat/merged-feature` with `force: false`.
+    // In raw Git, `git branch -d feat/merged-feature` would fail because it's not merged into `feat/active-wip`.
+    // But BranchCleanerService knows it IS merged into default branch (main), so it safely deletes it.
+    let summary = BranchCleanerService::remove_branches_batch(vec![BranchDeleteTarget {
+        repo_path: repo_path_str,
+        branch_name: "feat/merged-feature".to_string(),
+        force: false,
+    }]);
+
+    assert_eq!(
+        summary.deleted_count, 1,
+        "merged branch must be successfully deleted even when HEAD is on a feature branch"
+    );
+    assert_eq!(summary.skipped_count, 0);
+    assert!(summary.errors.is_empty());
+
+    let branches = run_git(repo_path, &["branch", "--list"]).expect("branch --list failed");
+    assert!(
+        !branches.contains("feat/merged-feature"),
+        "feat/merged-feature must be deleted from local branches"
+    );
+    assert!(branches.contains("feat/active-wip"), "active branch must remain intact");
+}
+

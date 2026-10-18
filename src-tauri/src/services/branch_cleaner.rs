@@ -114,56 +114,96 @@ impl BranchCleanerService {
                 };
 
                 for item in repo_targets {
-                    let is_protected = statuses
-                        .iter()
-                        .find(|s| s.name == item.branch_name)
-                        .map(|s| s.is_default || s.is_checked_out)
-                        .unwrap_or(false);
+                    let branch_status = statuses.iter().find(|s| s.name == item.branch_name);
 
-                    if is_protected {
+                    let is_default = branch_status.map(|s| s.is_default).unwrap_or(false);
+                    let is_checked_out = branch_status.map(|s| s.is_checked_out).unwrap_or(false);
+                    let is_merged = branch_status.map(|s| s.is_merged).unwrap_or(false);
+
+                    if is_default {
                         local_skipped += 1;
                         local_errors.push(BranchBatchItemError {
                             branch_name: item.branch_name.clone(),
-                            error: "Cannot delete the default branch or a branch checked out in a worktree.".to_string(),
+                            error: "Cannot delete the default branch (main/master).".to_string(),
                             kind: BatchItemErrorKind::Skipped,
                         });
                         continue;
                     }
 
-                    match GitService::delete_branch(
+                    if is_checked_out {
+                        let wt_msg = branch_status
+                            .and_then(|s| s.checked_out_worktree_path.as_deref())
+                            .map(|p| format!("Cannot delete branch checked out in worktree at {}", p))
+                            .unwrap_or_else(|| "Cannot delete branch checked out in a worktree.".to_string());
+                        local_skipped += 1;
+                        local_errors.push(BranchBatchItemError {
+                            branch_name: item.branch_name.clone(),
+                            error: wt_msg,
+                            kind: BatchItemErrorKind::Skipped,
+                        });
+                        continue;
+                    }
+
+                    let delete_result = GitService::delete_branch(
                         Path::new(&repo_path),
                         &item.branch_name,
                         item.force,
-                    ) {
+                    );
+
+                    match delete_result {
                         Ok(()) => local_deleted.push(DeletedBranchRef {
                             repo_path: repo_path.clone(),
                             branch_name: item.branch_name,
                         }),
                         Err(err) => {
-                            // Unforced, `git branch -d` refused: that is the expected safety net
-                            // for an unmerged branch (ADR 0006 point 3), not a malfunction.
-                            // However, if git failed for reasons other than merge protection
-                            // (e.g. repo lock, invalid ref, disk error), it must be reported
-                            // as a real failure so errors are not silenced.
                             let err_lower = err.to_lowercase();
-                            let is_unmerged_refusal = !item.force
-                                && (err_lower.contains("not fully merged")
-                                    || err_lower.contains("not merged")
-                                    || statuses
-                                        .iter()
-                                        .find(|s| s.name == item.branch_name)
-                                        .map(|s| !s.is_merged)
-                                        .unwrap_or(false));
+                            let is_not_merged_err = err_lower.contains("not fully merged")
+                                || err_lower.contains("not merged");
 
-                            let kind = if is_unmerged_refusal {
+                            // If unforced `git branch -d` failed with "not fully merged", but our server-side
+                            // check verified that the branch IS already merged into the repository default branch
+                            // (e.g. main/master), the refusal occurred only because HEAD is pointing to another branch.
+                            // Since all commits are verified present in default_branch, it is safe to delete with -D.
+                            if !item.force && is_not_merged_err && is_merged {
+                                match GitService::delete_branch(
+                                    Path::new(&repo_path),
+                                    &item.branch_name,
+                                    true,
+                                ) {
+                                    Ok(()) => {
+                                        local_deleted.push(DeletedBranchRef {
+                                            repo_path: repo_path.clone(),
+                                            branch_name: item.branch_name,
+                                        });
+                                        continue;
+                                    }
+                                    Err(retry_err) => {
+                                        local_errors.push(BranchBatchItemError {
+                                            branch_name: item.branch_name,
+                                            error: retry_err,
+                                            kind: BatchItemErrorKind::Failed,
+                                        });
+                                        continue;
+                                    }
+                                }
+                            }
+
+                            // If not merged and unforced: skip as safety net
+                            let is_unmerged_refusal = !item.force && (is_not_merged_err || !is_merged);
+
+                            let (kind, error_msg) = if is_unmerged_refusal {
                                 local_skipped += 1;
-                                BatchItemErrorKind::Skipped
+                                (
+                                    BatchItemErrorKind::Skipped,
+                                    "Branch is not merged into the default branch. Force delete is required.".to_string(),
+                                )
                             } else {
-                                BatchItemErrorKind::Failed
+                                (BatchItemErrorKind::Failed, err)
                             };
+
                             local_errors.push(BranchBatchItemError {
                                 branch_name: item.branch_name,
-                                error: err,
+                                error: error_msg,
                                 kind,
                             });
                         }

@@ -6,8 +6,11 @@ import type { BranchStatusEntry } from '../types';
  * remains the authority — this only puts the same rule into words for the UI.
  */
 export function branchProtectionReason(branch: BranchStatusEntry): string {
-  if (branch.isDefault) return 'Default branch — never deletable';
-  if (branch.isCheckedOut) return `Checked out at ${branch.checkedOutWorktreePath || 'a worktree'}`;
+  if (branch.isDefault) return 'Default branch — protected from deletion';
+  if (branch.isCheckedOut) {
+    const location = branch.checkedOutWorktreePath || 'a worktree';
+    return `In use by worktree (${location}) — release worktree to delete branch`;
+  }
   return '';
 }
 

@@ -53,3 +53,25 @@ dirty."
   - Re-deriving status per repo right before deleting adds a `branch -vv`/`branch --merged`/
     `worktree list` round-trip to every batch delete, on top of the scan that already ran a moment
     earlier. Negligible next to the safety it buys, same trade-off ADR 0003 made for dirty checks.
+
+---
+
+## Amendment (October 2026): Safe Merged Branch Deletion When HEAD is Diverged
+
+### Discovered Behavior
+In practice, `git branch -d <branch>` evaluates reachability exclusively against the active `HEAD` of
+the repository root, NOT the repository's `default_branch` (`main`). In workflows utilizing multiple
+worktrees or local feature branches, `HEAD` is frequently parked on a non-default branch (e.g.
+`feat/...`). Consequently, attempting unforced `git branch -d` on branches that are 100% merged into
+`main` triggers Git's `error: The branch '...' is not fully merged`.
+
+### Refinement
+1. **Safe Fallback to `-D` for Verified Merged Branches:** When `git branch -d` is rejected with
+   `not fully merged`, `BranchCleanerService::remove_branches_batch` checks whether the branch was
+   already verified as `is_merged == true` against the default branch (`git branch --merged <default_branch>`).
+   Because all commits are proven ancestors of `default_branch`, the cleaner safely falls back to `-D`,
+   preventing false refusals without compromising data safety.
+2. **Explicit Protection Diagnostics:** The error responses now differentiate `is_default` ("Cannot delete the
+   default branch (main/master)") from `is_checked_out` ("Cannot delete branch checked out in worktree at <path>"),
+   and toast notifications no longer conflate unmerged refusals with protected branches.
+

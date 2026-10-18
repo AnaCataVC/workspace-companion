@@ -672,7 +672,7 @@
       if (summary && !summary.errors.some((e) => e.kind === 'failed')) {
         branchSelection.clear();
         isBranchBatchDeleteModalOpen = false;
-        const skippedNote = summary.skippedCount > 0 ? ` ${summary.skippedCount} protected branch(es) skipped.` : '';
+        const skippedNote = summary.skippedCount > 0 ? ` (${summary.skippedCount} skipped: unmerged or in use)` : '';
         notifications.success('Branches deleted', `Successfully deleted ${summary.deletedCount} branch(es).${skippedNote}`);
       }
     } catch (err: unknown) {

@@ -97,6 +97,20 @@
     </p>
   {/if}
 
+  {#if isProtected}
+    <div class="flex items-center gap-1.5 py-0.5 text-[11px] {branch.isDefault ? 'text-indigo-300/90' : 'text-amber-300/90'} font-sans">
+      {#if branch.isDefault}
+        <Lock size={11} class="flex-shrink-0" />
+        <span>Default branch — protected from deletion</span>
+      {:else}
+        <Unlock size={11} class="flex-shrink-0 text-amber-400" />
+        <span class="truncate" title={branchProtectionReason(branch)}>
+          In worktree: {branch.checkedOutWorktreePath ? branch.checkedOutWorktreePath.split(/[/\\]/).pop() : 'active'} (release to delete)
+        </span>
+      {/if}
+    </div>
+  {/if}
+
   <div class="flex items-center justify-end gap-1.5 pt-1 border-t border-neutral-800/50 opacity-85 group-hover:opacity-100 transition-opacity">
     {#if isReleasable}
       <button

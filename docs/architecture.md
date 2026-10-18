@@ -63,8 +63,9 @@ The Rust backend handles low-level OS interactions, system tray lifecycle, and s
      rather than trusting the caller's targets, so the default branch and any checked-out branch are
      never deletable — not even with `force` — regardless of what the frontend last scanned. See
      ADR 0006.
-   - Deletion itself uses `git branch -d` (git's own refusal for unmerged branches) unless `force`
-     requests `-D`; the merged/remote-gone flags are informational for the UI, not a second gate.
+   - Deletion itself uses `git branch -d` (git's own refusal for unmerged branches) with a safe
+     fallback to `-D` if Git refuses solely because `HEAD` is not on the default branch and the branch
+     was verified `is_merged: true`. Unmerged branches strictly require explicit `force: true` (`-D`).
    - Shares `RepoOrphanContext` and the merged/gone classification logic with the orphaned worktree
      cleaner via `GitService::branch_status_flags`, so the two features can't disagree about what
      counts as merged or gone.
