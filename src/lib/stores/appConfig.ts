@@ -8,7 +8,8 @@ export const appConfig = writable<AppConfig>({
   defaultEditor: 'vscode',
   defaultTerminal: 'wt',
   showTerminalButton: true,
-  isPinned: false
+  isPinned: false,
+  viewDensity: 'compact'
 });
 
 export const selectedAccountFilter = writable<string>('ALL');

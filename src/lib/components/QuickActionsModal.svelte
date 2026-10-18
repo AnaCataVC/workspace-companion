@@ -54,26 +54,24 @@
   $: isNuclearPreset = $activeQuickActionPreset === 'totalFreshStart';
   $: isNuclearConfirmed = nuclearInputText.trim().toUpperCase() === NUCLEAR_KEYWORD;
 
-  // Scope binding
-  $: {
-    if (isSingleRepoMode) {
-      if (!selectedRepoPath && $scannedRepos.length > 0) {
-        selectedRepoPath = $scannedRepos[0].repoPath;
-      }
-      $quickActionScope = { singleRepo: { repoPath: selectedRepoPath } };
-    } else {
-      $quickActionScope = 'allWatchedRepos';
-    }
+  // On open, adopt the scope the opener chose (e.g. the per-repo shortcut) instead of overriding it.
+  let wasOpen = false;
+  $: if (isOpen && !wasOpen) {
+    const scope = $quickActionScope;
+    isSingleRepoMode = typeof scope === 'object';
+    selectedRepoPath = typeof scope === 'object' ? scope.singleRepo.repoPath : '';
   }
+  $: wasOpen = isOpen;
 
   // Reload preview whenever preset or scope changes
-  $: if (isOpen && !isExecutingQuickAction && !$quickActionResult) {
+  $: if (isOpen && !$isExecutingQuickAction && !$quickActionResult) {
     refreshPreview($activeQuickActionPreset, $quickActionScope);
   }
 
   function refreshPreview(preset: QuickActionPreset, scope: QuickActionScope) {
     disarm();
     nuclearInputText = '';
+    expandedAuditKey = null;
     fetchQuickActionPreview(preset, scope);
   }
 
@@ -85,6 +83,12 @@
   function handleScopeChange(singleRepo: boolean) {
     if ($isExecutingQuickAction) return;
     isSingleRepoMode = singleRepo;
+    if (singleRepo) {
+      selectedRepoPath = selectedRepoPath || $scannedRepos[0]?.repoPath || '';
+      $quickActionScope = { singleRepo: { repoPath: selectedRepoPath } };
+    } else {
+      $quickActionScope = 'allWatchedRepos';
+    }
   }
 
   function handleRepoChange(event: Event) {
@@ -92,6 +96,19 @@
     selectedRepoPath = target.value;
     $quickActionScope = { singleRepo: { repoPath: selectedRepoPath } };
   }
+
+  // Which pre-flight card has its item list expanded.
+  let expandedAuditKey: string | null = null;
+
+  $: auditCards = $quickActionPreview
+    ? [
+        { key: 'repos', label: 'Repos', count: $quickActionPreview.reposCount, items: [] as string[], color: 'text-neutral-200' },
+        { key: 'nuke', label: 'WTs to Nuke', count: $quickActionPreview.worktreesToRemove.length, items: $quickActionPreview.worktreesToRemove, color: 'text-rose-300' },
+        { key: 'dirty', label: 'Dirty Files', count: $quickActionPreview.dirtyFilesCount, items: $quickActionPreview.worktreesToDiscard, color: 'text-amber-300' },
+        { key: 'branches', label: 'Branches to Delete', count: $quickActionPreview.branchesToDelete.length, items: $quickActionPreview.branchesToDelete, color: 'text-rose-300' }
+      ]
+    : [];
+  $: expandedCard = auditCards.find((c) => c.key === expandedAuditKey) ?? null;
 
   function armAction() {
     isArmed = true;
@@ -418,26 +435,31 @@
             </div>
           {:else if $quickActionPreview}
             <div class="grid grid-cols-4 gap-2 text-center">
-              <div class="p-2 rounded bg-neutral-900 border border-neutral-800">
-                <span class="text-xs font-semibold text-neutral-200">{$quickActionPreview.reposCount}</span>
-                <p class="text-[10px] text-neutral-500 uppercase mt-0.5">Repos</p>
-              </div>
-
-              <div class="p-2 rounded bg-neutral-900 border border-neutral-800">
-                <span class="text-xs font-semibold text-rose-300">{$quickActionPreview.worktreesToRemove.length}</span>
-                <p class="text-[10px] text-neutral-500 uppercase mt-0.5">WTs to Nuke</p>
-              </div>
-
-              <div class="p-2 rounded bg-neutral-900 border border-neutral-800">
-                <span class="text-xs font-semibold text-amber-300">{$quickActionPreview.dirtyFilesCount}</span>
-                <p class="text-[10px] text-neutral-500 uppercase mt-0.5">Dirty Files</p>
-              </div>
-
-              <div class="p-2 rounded bg-neutral-900 border border-neutral-800">
-                <span class="text-xs font-semibold text-rose-300">{$quickActionPreview.branchesToDelete.length}</span>
-                <p class="text-[10px] text-neutral-500 uppercase mt-0.5">Branches to Delete</p>
-              </div>
+              {#each auditCards as card (card.key)}
+                {@const expandable = card.items.length > 0}
+                <button
+                  type="button"
+                  disabled={!expandable}
+                  aria-expanded={expandable ? expandedAuditKey === card.key : undefined}
+                  title={expandable ? 'Show exact items' : undefined}
+                  on:click={() => (expandedAuditKey = expandedAuditKey === card.key ? null : card.key)}
+                  class="p-2 rounded bg-neutral-900 border transition-colors disabled:cursor-default
+                    {expandedAuditKey === card.key ? 'border-indigo-500/60' : 'border-neutral-800'}
+                    {expandable ? 'hover:border-neutral-600 cursor-pointer' : ''}"
+                >
+                  <span class="text-xs font-semibold {card.color}">{card.count}</span>
+                  <p class="text-[10px] text-neutral-500 uppercase mt-0.5">{card.label}</p>
+                </button>
+              {/each}
             </div>
+
+            {#if expandedCard}
+              <ul class="max-h-28 overflow-y-auto space-y-0.5 p-2 rounded bg-neutral-900 border border-neutral-800 text-[11px] font-mono text-neutral-300 no-scrollbar">
+                {#each expandedCard.items as item (item)}
+                  <li class="truncate" title={item}>{item}</li>
+                {/each}
+              </ul>
+            {/if}
 
             <div class="flex items-center justify-between text-[11px] text-neutral-400 pt-1">
               <span>Protected Default Branches:</span>

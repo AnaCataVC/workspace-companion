@@ -7,9 +7,6 @@
     Trash2,
     Eraser,
     Lock,
-    Code2,
-    Sparkles,
-    Compass,
     Terminal,
     ChevronDown,
     Bot,
@@ -18,11 +15,13 @@
     GitPullRequestClosed
   } from 'lucide-svelte';
   import { batchSelection, selectedPaths } from '../stores/batchSelection';
-  import { highlightedWorktreePath, openWorktreeActionCount } from '../stores/worktrees';
+  import { highlightedWorktreePath, keyboardFocusedPath, openWorktreeActionCount } from '../stores/worktrees';
   import { appConfig } from '../stores/appConfig';
   import { createEventDispatcher, onDestroy } from 'svelte';
   import DirtyDiffPopover from './DirtyDiffPopover.svelte';
   import DiscardChangesPanel from './DiscardChangesPanel.svelte';
+  import EditorSplitButton from './EditorSplitButton.svelte';
+  import CopyPathButton from './CopyPathButton.svelte';
   import { closeOnEscape } from '../actions/closeOnEscape';
   import { autofocus } from '../actions/autofocus';
   import { worktreeProtectionReason } from '../utils/protectionReason';
@@ -68,18 +67,21 @@
   $: preferredTerminal = ($appConfig.defaultTerminal as SupportedTerminal) || 'wt';
   $: showTerminalBtn = ($appConfig.showTerminalButton !== false) && preferredTerminal !== 'none';
 
-  let isHovered = false;
   let rootEl: HTMLDivElement;
 
   let highlightTimer: ReturnType<typeof setTimeout> | null = null;
   $: isSelected = $selectedPaths.has(worktree.path);
   $: isHighlighted = $highlightedWorktreePath === worktree.path;
+  $: isKeyboardFocused = $keyboardFocusedPath === worktree.path;
   $: if (isHighlighted && rootEl) {
     rootEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
     if (highlightTimer) clearTimeout(highlightTimer);
     highlightTimer = setTimeout(() => {
       highlightedWorktreePath.set(null);
     }, 2500);
+  }
+  $: if (isKeyboardFocused && rootEl) {
+    rootEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
   function toggleSelection() {
@@ -102,14 +104,12 @@
   bind:this={rootEl}
   role="group"
   class="group relative flex items-center justify-between px-2.5 py-1.5 rounded-md border transition-all text-xs
-    {isHighlighted ? 'ring-2 ring-indigo-500/70' : ''}
+    {isHighlighted ? 'ring-2 ring-indigo-500/70' : isKeyboardFocused ? 'ring-1 ring-indigo-500/70 border-indigo-600/70' : ''}
     {isSelected
       ? 'bg-rose-950/30 border-rose-800/60 shadow-xs'
       : worktree.isMain
       ? 'bg-indigo-950/20 hover:bg-indigo-950/35 border-indigo-900/40 hover:border-indigo-800/60 shadow-xs'
       : 'bg-neutral-900/60 hover:bg-neutral-850/90 border-neutral-800/60 hover:border-neutral-700/80'}"
-  on:mouseenter={() => (isHovered = true)}
-  on:mouseleave={() => (isHovered = false)}
 >
   <!-- Left Side: Hierarchy Connector + Selection Checkbox + Branch / Name / Badges -->
   <div class="flex items-center gap-2 min-w-0 flex-1">
@@ -161,13 +161,10 @@
       <ChevronDown size={10} class="text-neutral-400 group-hover/btn:text-neutral-300 transition-colors flex-shrink-0" />
     </button>
 
-    <!-- Path directory name -->
-    <span
-      class="font-mono text-[11px] text-neutral-400 truncate max-w-[130px] hidden sm:inline-block"
-      title={worktree.path}
-    >
-      {getDirectoryName(worktree.path)}
-    </span>
+    <!-- Path directory name (1-click copy) -->
+    <div class="hidden sm:inline-flex min-w-0">
+      <CopyPathButton path={worktree.path} maxWidthClass="max-w-[140px]" />
+    </div>
 
     <!-- Status Badges -->
     <div class="flex items-center gap-1 flex-shrink-0">
@@ -233,25 +230,13 @@
 
   <!-- Right Side: Mini-Dock 1-Click Action Buttons -->
   <div class="flex items-center gap-1 flex-shrink-0 ml-2">
-    <!-- 1-Click Launch Editor -->
-    <button
-      type="button"
-      on:click={() => dispatch('openEditor', { editor: preferredEditor, path: worktree.path })}
-      title={`Open in ${preferredEditor === 'antigravity' ? 'Antigravity IDE' : preferredEditor.toUpperCase()}`}
-      class="min-w-6 min-h-6 flex items-center justify-center p-1 rounded hover:bg-neutral-800 text-neutral-400 hover:text-white border border-transparent hover:border-neutral-700 transition-colors gap-1"
-    >
-      {#if preferredEditor === 'antigravity'}
-        <Bot size={12} class="text-indigo-400" />
-      {:else if preferredEditor === 'vscode'}
-        <Code2 size={12} class="text-blue-400" />
-      {:else if preferredEditor === 'cursor'}
-        <Sparkles size={12} class="text-purple-400" />
-      {:else if preferredEditor === 'windsurf'}
-        <Compass size={12} class="text-emerald-400" />
-      {:else}
-        <Folder size={12} class="text-amber-400" />
-      {/if}
-    </button>
+    <!-- 1-Click Launch Editor + Dropdown -->
+    <EditorSplitButton
+      {preferredEditor}
+      path={worktree.path}
+      compact={true}
+      on:openEditor={(e) => dispatch('openEditor', e.detail)}
+    />
 
     <!-- 1-Click Launch Terminal / CLI (configurable & toggleable) -->
     {#if showTerminalBtn}

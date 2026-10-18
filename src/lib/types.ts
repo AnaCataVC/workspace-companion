@@ -134,6 +134,7 @@ export interface AppConfig {
   showTerminalButton: boolean;
   /** Absent in configs saved before pinning was persisted; treat as false. */
   isPinned?: boolean;
+  viewDensity?: ViewDensity;
 }
 
 export interface BranchEntry {

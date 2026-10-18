@@ -3,7 +3,7 @@
   import { branchSearchFilter } from '../stores/branchCleaner';
   import { activeGhAccount } from '../stores/ghAuth';
   import { viewDensity } from '../stores/appConfig';
-  import { RefreshCw, Pin, PinOff, Github, Search, Plus, Settings2, LayoutList, LayoutGrid, GitBranch, FolderTree, Zap } from 'lucide-svelte';
+  import { RefreshCw, Pin, PinOff, Github, Search, Plus, Settings2, LayoutList, LayoutGrid, GitBranch, FolderTree, Zap, X } from 'lucide-svelte';
 
   export let activeView: 'worktrees' | 'branches' = 'worktrees';
   export let isRefreshing: boolean = false;
@@ -14,9 +14,13 @@
   export let onOpenSettingsModal: () => void;
   export let onOpenQuickActionsModal: () => void;
   export let onTogglePin: () => void;
+  export let onToggleDensity: () => void;
 
-  function toggleDensity() {
-    viewDensity.update(d => (d === 'compact' ? 'detailed' : 'compact'));
+  let searchInputEl: HTMLInputElement | null = null;
+
+  export function focusSearchInput() {
+    searchInputEl?.focus();
+    searchInputEl?.select();
   }
 </script>
 
@@ -73,7 +77,7 @@
       <!-- View Density Toggle -->
       <button
         type="button"
-        on:click={toggleDensity}
+        on:click={onToggleDensity}
         title={$viewDensity === 'compact' ? "Switch to Detailed Cards view" : "Switch to Compact Tree view"}
         aria-label={$viewDensity === 'compact' ? "Switch to Detailed Cards view" : "Switch to Compact Tree view"}
         class="p-1.5 rounded-md hover:bg-neutral-800 text-neutral-400 hover:text-indigo-300 transition-colors"
@@ -145,27 +149,53 @@
     </div>
   </div>
 
-  {#if activeView === 'worktrees'}
-    <!-- Search Filter Input -->
-    <div class="relative flex items-center">
-      <Search size={13} class="absolute left-2.5 text-neutral-400 pointer-events-none" />
+  <!-- Unified Search Filter Input -->
+  <div class="relative flex items-center">
+    <Search size={13} class="absolute left-2.5 text-neutral-400 pointer-events-none" />
+    {#if activeView === 'worktrees'}
       <input
+        bind:this={searchInputEl}
         type="text"
         bind:value={$searchFilter}
-        placeholder="Filter worktree, branch or path..."
-        class="w-full bg-neutral-900 border border-neutral-800 rounded-md pl-8 pr-3 py-1 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-indigo-500/70 focus:ring-1 focus:ring-indigo-500/30 transition-all font-sans"
+        placeholder="Filter worktree, branch, repo or @account... (/ to focus, ↑↓ Enter)"
+        class="w-full bg-neutral-900 border border-neutral-800 rounded-md pl-8 pr-7 py-1 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-indigo-500/70 focus:ring-1 focus:ring-indigo-500/30 transition-all font-sans"
       />
-    </div>
-  {:else}
-    <!-- Branch Search Filter Input -->
-    <div class="relative flex items-center">
-      <Search size={13} class="absolute left-2.5 text-neutral-400 pointer-events-none" />
+      {#if $searchFilter}
+        <button
+          type="button"
+          on:click={() => {
+            searchFilter.set('');
+            searchInputEl?.focus();
+          }}
+          title="Clear search (Esc)"
+          aria-label="Clear search"
+          class="absolute right-2 p-0.5 rounded text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors"
+        >
+          <X size={12} />
+        </button>
+      {/if}
+    {:else}
       <input
+        bind:this={searchInputEl}
         type="text"
         bind:value={$branchSearchFilter}
-        placeholder="Filter branch name or repo path..."
-        class="w-full bg-neutral-900 border border-neutral-800 rounded-md pl-8 pr-3 py-1 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-indigo-500/70 focus:ring-1 focus:ring-indigo-500/30 transition-all font-sans"
+        placeholder="Filter branch name or repo path... (/ to focus)"
+        class="w-full bg-neutral-900 border border-neutral-800 rounded-md pl-8 pr-7 py-1 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-indigo-500/70 focus:ring-1 focus:ring-indigo-500/30 transition-all font-sans"
       />
-    </div>
-  {/if}
+      {#if $branchSearchFilter}
+        <button
+          type="button"
+          on:click={() => {
+            branchSearchFilter.set('');
+            searchInputEl?.focus();
+          }}
+          title="Clear search (Esc)"
+          aria-label="Clear search"
+          class="absolute right-2 p-0.5 rounded text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors"
+        >
+          <X size={12} />
+        </button>
+      {/if}
+    {/if}
+  </div>
 </header>

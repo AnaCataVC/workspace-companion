@@ -17,15 +17,15 @@
   import ReleaseBranchModal from './lib/components/ReleaseBranchModal.svelte';
   import QuickActionsModal from './lib/components/QuickActionsModal.svelte';
   import ToastContainer from './lib/components/ToastContainer.svelte';
-  import { scannedRepos, filteredRepos, isScanning, isPinned, scanError, highlightedWorktreePath, searchFilter, openWorktreeActionCount } from './lib/stores/worktrees';
-  import { scannedBranches, isScanningBranches, branchScanError } from './lib/stores/branchCleaner';
+  import { scannedRepos, filteredRepos, isScanning, isPinned, scanError, highlightedWorktreePath, searchFilter, openWorktreeActionCount, keyboardFocusedPath, navigableWorktrees } from './lib/stores/worktrees';
+  import { scannedBranches, isScanningBranches, branchScanError, branchSearchFilter } from './lib/stores/branchCleaner';
   import { ghAccounts, activeGhAccount, isGhLoading } from './lib/stores/ghAuth';
-  import { appConfig, selectedAccountFilter, selectedStatusFilter } from './lib/stores/appConfig';
+  import { appConfig, selectedAccountFilter, selectedStatusFilter, viewDensity } from './lib/stores/appConfig';
   import { batchSelection, selectedWorktreeList } from './lib/stores/batchSelection';
   import { branchSelection, selectedBranchList } from './lib/stores/branchSelection';
   import { installedEditors } from './lib/stores/editors';
   import { notifications } from './lib/stores/notifications';
-  import { isQuickActionsModalOpen } from './lib/stores/quickActions';
+  import { isQuickActionsModalOpen, openQuickActionsModal } from './lib/stores/quickActions';
   import { invokeTauri } from './lib/utils/ipc';
   import { toErrorMessage } from './lib/utils/errors';
   import { isPathWithin, normalizePath } from './lib/utils/paths';
@@ -106,6 +106,7 @@
       if (cfg) {
         appConfig.set(cfg);
         isPinned.set(cfg.isPinned ?? false);
+        if (cfg.viewDensity) viewDensity.set(cfg.viewDensity);
       }
     } catch (err: unknown) {
       notifications.error('Configuration Error', toErrorMessage(err, 'Failed to load app config'));
@@ -542,16 +543,7 @@
       force: false
     }));
 
-    const orphanPaths = new Set(targets.map((t) => t.worktreePath));
-    const otherSelected = $selectedWorktreeList.filter((t) => !orphanPaths.has(t.worktreePath)).length;
-    if (
-      otherSelected > 0 &&
-      !window.confirm(`Replace your current selection (${otherSelected} other worktree(s)) with the ${targets.length} orphan(s) of ${repo.repoName}?`)
-    ) {
-      return;
-    }
-
-    batchSelection.clear();
+    // Added to the current selection so manual picks in other repos are kept.
     batchSelection.selectRepo(targets);
     batchDeleteSummary = null;
     batchDeleteError = null;
@@ -744,9 +736,78 @@
     if (event.key === 'Escape') modalOpenAtEscape = isAnyModalOpen;
   }
 
+  let headerRef: Header;
+
+  async function handleToggleDensity() {
+    const density = $viewDensity === 'compact' ? 'detailed' : 'compact';
+    viewDensity.set(density);
+    try {
+      const saved = await invokeTauri<AppConfig>('save_app_config', { config: { ...$appConfig, viewDensity: density } });
+      if (saved) appConfig.set(saved);
+    } catch (err: unknown) {
+      notifications.error('Could not save view density', toErrorMessage(err));
+    }
+  }
+
+  function moveKeyboardFocus(step: 1 | -1) {
+    const items = $navigableWorktrees;
+    if (items.length === 0) return;
+    const current = items.findIndex((i) => i.worktree.path === $keyboardFocusedPath);
+    const next = current === -1 ? (step === 1 ? 0 : items.length - 1) : (current + step + items.length) % items.length;
+    keyboardFocusedPath.set(items[next].worktree.path);
+  }
+
+  function launchFocusedWorktree(event: KeyboardEvent) {
+    const item = $navigableWorktrees.find((i) => i.worktree.path === $keyboardFocusedPath);
+    if (!item) return;
+    const path = item.worktree.path;
+    if (event.shiftKey) {
+      handleOpenPath(new CustomEvent('openPath', { detail: path }));
+    } else if (event.ctrlKey) {
+      const terminal = ($appConfig.defaultTerminal as SupportedTerminal) || 'wt';
+      handleOpenTerminal(new CustomEvent('openTerminal', { detail: { terminal, path } }));
+    } else {
+      const editor = ($appConfig.defaultEditor as SupportedEditor) || 'vscode';
+      handleOpenEditor(new CustomEvent('openEditor', { detail: { editor, path } }));
+    }
+  }
+
   function handleWindowKeydown(event: KeyboardEvent) {
-    // Inline widgets that consume Escape themselves call preventDefault.
-    if (event.key !== 'Escape' || modalOpenAtEscape || event.defaultPrevented) return;
+    if (event.defaultPrevented || isAnyModalOpen) return;
+
+    const target = event.target as HTMLElement | null;
+    const isTyping = target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLInputElement && !target.closest('header'));
+    const isSearchInput = target instanceof HTMLInputElement && Boolean(target.closest('header'));
+    const isSearchOrBody = target === document.body || isSearchInput;
+
+    if ((event.key === '/' && !isTyping && !isSearchInput) || (event.key.toLowerCase() === 'f' && event.ctrlKey)) {
+      event.preventDefault();
+      headerRef?.focusSearchInput();
+      return;
+    }
+
+    if (activeView === 'worktrees' && isSearchOrBody && !isTyping) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        moveKeyboardFocus(event.key === 'ArrowDown' ? 1 : -1);
+        return;
+      }
+      if (event.key === 'Enter' && $keyboardFocusedPath) {
+        event.preventDefault();
+        launchFocusedWorktree(event);
+        return;
+      }
+    }
+
+    if (event.key !== 'Escape' || modalOpenAtEscape) return;
+
+    // Escape clears an active search first and only hides the panel when there is nothing to clear.
+    if (activeView === 'worktrees' ? $searchFilter : $branchSearchFilter) {
+      if (activeView === 'worktrees') searchFilter.set('');
+      else branchSearchFilter.set('');
+      return;
+    }
+    keyboardFocusedPath.set(null);
     invokeTauri('hide_panel').catch(() => {
       // Hiding is best-effort; the tray and Alt+Space still toggle the panel.
     });
@@ -791,6 +852,7 @@
 
 <main class="w-full h-screen flex flex-col bg-neutral-900 text-neutral-100 overflow-hidden select-none relative">
   <Header
+    bind:this={headerRef}
     {activeView}
     isRefreshing={activeView === 'worktrees' ? $isScanning : $isScanningBranches}
     onRefresh={activeView === 'worktrees' ? refreshWorktrees : () => refreshBranches()}
@@ -798,8 +860,9 @@
     onOpenGhModal={() => (isGhModalOpen = true)}
     onOpenNewWorktreeModal={() => handleOpenNewWorktree()}
     onOpenSettingsModal={() => (isSettingsModalOpen = true)}
-    onOpenQuickActionsModal={() => isQuickActionsModalOpen.set(true)}
+    onOpenQuickActionsModal={() => openQuickActionsModal()}
     onTogglePin={handleTogglePin}
+    onToggleDensity={handleToggleDensity}
   />
 
   {#if activeView === 'worktrees'}

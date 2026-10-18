@@ -43,6 +43,8 @@ pub struct AppConfig {
     /// Pinned windows stay always on top of other applications.
     #[serde(default)]
     pub is_pinned: bool,
+    #[serde(default = "default_view_density")]
+    pub view_density: String,
 }
 
 fn default_version() -> u32 {
@@ -57,6 +59,10 @@ fn default_terminal() -> String {
     "wt".to_string()
 }
 
+fn default_view_density() -> String {
+    "compact".to_string()
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -67,6 +73,7 @@ impl Default for AppConfig {
             default_terminal: "wt".to_string(),
             show_terminal_button: true,
             is_pinned: false,
+            view_density: "compact".to_string(),
         }
     }
 }
@@ -183,6 +190,7 @@ mod tests {
         assert!(config.show_terminal_button);
         assert!(config.auto_switch_account);
         assert!(!config.is_pinned);
+        assert_eq!(config.view_density, "compact");
         assert_eq!(config.watch_folders.len(), 1);
         assert!(config.watch_folders[0].enabled);
         assert_eq!(config.watch_folders[0].max_depth, 1);
@@ -190,10 +198,12 @@ mod tests {
 
     #[test]
     fn test_is_pinned_round_trips_as_camel_case() {
-        let json = r#"{"isPinned": true}"#;
+        let json = r#"{"isPinned": true, "viewDensity": "detailed"}"#;
         let config: AppConfig = serde_json::from_str(json).unwrap();
         assert!(config.is_pinned);
+        assert_eq!(config.view_density, "detailed");
         let serialized = serde_json::to_string(&config).unwrap();
         assert!(serialized.contains("\"isPinned\":true"));
+        assert!(serialized.contains("\"viewDensity\":\"detailed\""));
     }
 }

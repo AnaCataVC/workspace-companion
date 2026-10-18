@@ -7,22 +7,20 @@
     Trash2,
     Eraser,
     Lock,
-    Code2,
-    Sparkles,
-    Compass,
     Terminal,
     ChevronDown,
     Bot,
     GitMerge,
     GitPullRequestClosed
   } from 'lucide-svelte';
-  import { installedEditors } from '../stores/editors';
   import { batchSelection, selectedPaths } from '../stores/batchSelection';
-  import { highlightedWorktreePath, openWorktreeActionCount } from '../stores/worktrees';
+  import { highlightedWorktreePath, keyboardFocusedPath, openWorktreeActionCount } from '../stores/worktrees';
   import { appConfig } from '../stores/appConfig';
   import { createEventDispatcher, onDestroy } from 'svelte';
   import DirtyDiffPopover from './DirtyDiffPopover.svelte';
   import DiscardChangesPanel from './DiscardChangesPanel.svelte';
+  import EditorSplitButton from './EditorSplitButton.svelte';
+  import CopyPathButton from './CopyPathButton.svelte';
   import { closeOnEscape } from '../actions/closeOnEscape';
   import { autofocus } from '../actions/autofocus';
   import { worktreeProtectionReason } from '../utils/protectionReason';
@@ -41,7 +39,6 @@
     worktreeDiscarded: WorktreeInfo;
   }>();
 
-  let isEditorMenuOpen = false;
   let isDiscardPopoverOpen = false;
   let rootEl: HTMLDivElement;
 
@@ -71,12 +68,16 @@
   let highlightTimer: ReturnType<typeof setTimeout> | null = null;
   $: isSelected = $selectedPaths.has(worktree.path);
   $: isHighlighted = $highlightedWorktreePath === worktree.path;
+  $: isKeyboardFocused = $keyboardFocusedPath === worktree.path;
   $: if (isHighlighted && rootEl) {
     rootEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
     if (highlightTimer) clearTimeout(highlightTimer);
     highlightTimer = setTimeout(() => {
       highlightedWorktreePath.set(null);
     }, 2500);
+  }
+  $: if (isKeyboardFocused && rootEl) {
+    rootEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
   function toggleSelection() {
@@ -91,34 +92,16 @@
       uncommittedFilesCount: worktree.uncommittedFilesCount
     });
   }
-
-  function checkAvailable(id: SupportedEditor): boolean {
-    const found = $installedEditors.find(e => e.id === id);
-    return found ? found.isAvailable : true;
-  }
-
-  function selectAndLaunchEditor(editor: SupportedEditor) {
-    if (!checkAvailable(editor)) return;
-    isEditorMenuOpen = false;
-    dispatch('openEditor', { editor, path: worktree.path });
-  }
 </script>
 
 <svelte:window
-  on:keydown={(e) => {
-    // Consumed so the panel-level Escape does not also hide the window.
-    if (e.key === 'Escape' && isEditorMenuOpen) {
-      e.preventDefault();
-      isEditorMenuOpen = false;
-    }
-  }}
   use:closeOnEscape={{ enabled: () => isDiscardPopoverOpen, onClose: closeDiscardPopover }}
 />
 
 <div
   bind:this={rootEl}
   class="group relative rounded-lg border p-2.5 transition-all text-xs flex flex-col gap-1.5 shadow-sm
-  {isHighlighted ? 'ring-2 ring-indigo-500/70' : ''}
+  {isHighlighted ? 'ring-2 ring-indigo-500/70' : isKeyboardFocused ? 'ring-1 ring-indigo-500/70 border-indigo-600/70' : ''}
   {isSelected
     ? 'bg-rose-950/30 border-rose-800/70 shadow-xs'
     : 'bg-neutral-900/90 hover:bg-neutral-850 border-neutral-800/80 hover:border-neutral-700'}">
@@ -223,10 +206,7 @@
 
   <!-- Path and last commit info -->
   <div class="flex items-center justify-between text-neutral-400 text-[11px]">
-    <div class="flex items-center gap-1 truncate max-w-[260px]" title={worktree.path}>
-      <Folder size={11} class="text-neutral-400 flex-shrink-0" />
-      <span class="font-mono truncate">{getDirectoryName(worktree.path)}</span>
-    </div>
+    <CopyPathButton path={worktree.path} showFolderIcon={true} maxWidthClass="max-w-[260px]" />
 
     <span class="font-mono text-[11px] text-neutral-400">
       {worktree.head.substring(0, 7)}
@@ -242,83 +222,11 @@
   <!-- Action buttons -->
   <div class="flex items-center justify-end gap-1.5 pt-1 border-t border-neutral-800/50 opacity-85 group-hover:opacity-100 transition-opacity">
     <!-- IDE Launcher Split Button -->
-    <div class="relative flex items-center rounded bg-neutral-800/80 border border-neutral-700/60 shadow-xs">
-      <button
-        type="button"
-        on:click={() => dispatch('openEditor', { editor: preferredEditor, path: worktree.path })}
-        title={`Open in ${preferredEditor.toUpperCase()}`}
-        class="px-1.5 py-1 text-neutral-300 hover:text-white hover:bg-neutral-700 rounded-l flex items-center gap-1 transition-colors text-[11px]"
-      >
-        {#if preferredEditor === 'antigravity'}
-          <Bot size={12} class="text-indigo-400" />
-        {:else if preferredEditor === 'vscode'}
-          <Code2 size={12} class="text-blue-400" />
-        {:else if preferredEditor === 'cursor'}
-          <Sparkles size={12} class="text-purple-400" />
-        {:else if preferredEditor === 'windsurf'}
-          <Compass size={12} class="text-emerald-400" />
-        {:else if preferredEditor === 'wt'}
-          <Terminal size={12} class="text-neutral-300" />
-        {:else}
-          <Folder size={12} class="text-amber-400" />
-        {/if}
-        <span class="capitalize font-mono text-[11px]">{preferredEditor === 'antigravity' ? 'Antigravity' : preferredEditor}</span>
-      </button>
-
-      <button
-        type="button"
-        on:click={() => (isEditorMenuOpen = !isEditorMenuOpen)}
-        title="Select editor or terminal"
-        aria-label="Select editor or terminal"
-        aria-haspopup="menu"
-        aria-expanded={isEditorMenuOpen}
-        class="min-w-6 min-h-6 flex items-center justify-center px-1 py-1 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700 rounded-r border-l border-neutral-700/60 transition-colors"
-      >
-        <ChevronDown size={10} />
-      </button>
-
-      {#if isEditorMenuOpen}
-        <!-- Backdrop to close dropdown -->
-        <div
-          class="fixed inset-0 z-20"
-          on:click={() => (isEditorMenuOpen = false)}
-          role="presentation"
-        ></div>
-
-        <!-- Dropdown Menu -->
-        <div role="menu" class="absolute right-0 top-7 z-30 w-44 rounded-lg bg-neutral-900 border border-neutral-700 shadow-xl p-1 flex flex-col gap-0.5">
-          {#each $installedEditors as ed (ed.id)}
-            <button
-              type="button"
-              disabled={!ed.isAvailable}
-              on:click={() => selectAndLaunchEditor(ed.id)}
-              class="flex items-center justify-between px-2 py-1 text-[11px] rounded transition-colors text-left
-                {ed.isAvailable ? 'text-neutral-300 hover:text-white hover:bg-neutral-800 cursor-pointer' : 'text-neutral-400 opacity-40 cursor-not-allowed'}"
-            >
-              <div class="flex items-center gap-2">
-                {#if ed.id === 'antigravity'}
-                  <Bot size={12} class={ed.isAvailable ? 'text-indigo-400' : 'text-neutral-400'} />
-                {:else if ed.id === 'vscode'}
-                  <Code2 size={12} class={ed.isAvailable ? 'text-blue-400' : 'text-neutral-400'} />
-                {:else if ed.id === 'cursor'}
-                  <Sparkles size={12} class={ed.isAvailable ? 'text-purple-400' : 'text-neutral-400'} />
-                {:else if ed.id === 'windsurf'}
-                  <Compass size={12} class={ed.isAvailable ? 'text-emerald-400' : 'text-neutral-400'} />
-                {:else if ed.id === 'wt'}
-                  <Terminal size={12} class={ed.isAvailable ? 'text-neutral-300' : 'text-neutral-400'} />
-                {:else}
-                  <Folder size={12} class={ed.isAvailable ? 'text-amber-400' : 'text-neutral-400'} />
-                {/if}
-                <span>{ed.name}</span>
-              </div>
-              {#if !ed.isAvailable}
-                <span class="text-[11px] text-neutral-400 font-sans">Not installed</span>
-              {/if}
-            </button>
-          {/each}
-        </div>
-      {/if}
-    </div>
+    <EditorSplitButton
+      {preferredEditor}
+      path={worktree.path}
+      on:openEditor={(e) => dispatch('openEditor', e.detail)}
+    />
 
     <!-- 1-Click Launch Terminal / CLI (configurable & toggleable) -->
     {#if showTerminalBtn}

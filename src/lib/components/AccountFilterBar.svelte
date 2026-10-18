@@ -11,7 +11,9 @@
   $: searchQuery = $searchFilter.toLowerCase().trim();
   $: searchedRepos = $scannedRepos.map((repo) => ({
     ...repo,
-    worktrees: repo.worktrees.filter((wt) => worktreeMatchesSearch(wt, searchQuery))
+    worktrees: repo.worktrees.filter((wt) =>
+      worktreeMatchesSearch(wt, searchQuery, repo.repoName, repo.associatedAccount)
+    )
   }));
 
   // Account names are compared case-insensitively everywhere (see `filteredRepos`), so "Alice"
@@ -63,7 +65,7 @@
       // Multi-WT is a repo-level property evaluated on the unsearched repo, as in `filteredRepos`.
       const isMultiWt = repo.worktrees.length > 1;
       for (const wt of repo.worktrees) {
-        if (!worktreeMatchesSearch(wt, searchQuery)) continue;
+        if (!worktreeMatchesSearch(wt, searchQuery, repo.repoName, repo.associatedAccount)) continue;
         all++;
         if (isMultiWt) multiWt++;
         if (wt.isDirty) dirty++;

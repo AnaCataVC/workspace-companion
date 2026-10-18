@@ -9,12 +9,20 @@ export const isPinned = writable<boolean>(false);
 export const scanError = writable<string | null>(null);
 
 /** Whether a worktree matches the search box; `query` must already be lowercased and trimmed. */
-export function worktreeMatchesSearch(wt: WorktreeInfo, query: string): boolean {
+export function worktreeMatchesSearch(
+  wt: WorktreeInfo,
+  query: string,
+  repoName?: string,
+  associatedAccount?: string | null
+): boolean {
   if (!query) return true;
+  const accountText = associatedAccount ? `@${associatedAccount.toLowerCase()}` : '';
   return Boolean(
     (wt.branch && wt.branch.toLowerCase().includes(query)) ||
       wt.path.toLowerCase().includes(query) ||
-      (wt.lastCommitMessage && wt.lastCommitMessage.toLowerCase().includes(query))
+      (wt.lastCommitMessage && wt.lastCommitMessage.toLowerCase().includes(query)) ||
+      (repoName && repoName.toLowerCase().includes(query)) ||
+      (accountText && accountText.includes(query))
   );
 }
 
@@ -50,7 +58,7 @@ export const filteredRepos = derived(
           if ($status === 'ORPHANS' && (wt.isMain || !wt.isOrphaned)) return false;
           if ($status === 'CLEAN' && wt.isDirty) return false;
 
-          return worktreeMatchesSearch(wt, q);
+          return worktreeMatchesSearch(wt, q, repo.repoName, repo.associatedAccount);
         });
 
         return {
@@ -63,6 +71,36 @@ export const filteredRepos = derived(
 
 /** Worktree the user asked to be taken to (from the Branches view); cleared on view change. */
 export const highlightedWorktreePath = writable<string | null>(null);
+
+/** Worktree currently focused via Up/Down arrow keyboard navigation. */
+export const keyboardFocusedPath = writable<string | null>(null);
+
+/** Session-only set of collapsed repository paths; ignored while a search or status filter is active. */
+export const collapsedRepos = writable<Set<string>>(new Set());
+
+export function toggleRepoCollapsed(repoPath: string): void {
+  collapsedRepos.update((prev) => {
+    const next = new Set(prev);
+    if (next.has(repoPath)) next.delete(repoPath);
+    else next.add(repoPath);
+    return next;
+  });
+}
+
+/** While any search or status filter is active, collapsed repos are shown expanded so matches stay visible. */
+export const isFilterActive = derived(
+  [searchFilter, selectedStatusFilter],
+  ([$search, $status]) => Boolean($search.trim()) || $status !== 'ALL'
+);
+
+/** Worktrees currently rendered on screen, in display order; the arrow-key navigation walks this list. */
+export const navigableWorktrees = derived(
+  [filteredRepos, collapsedRepos, isFilterActive],
+  ([$repos, $collapsed, $filterActive]) =>
+    $repos
+      .filter((repo) => $filterActive || !$collapsed.has(repo.repoPath))
+      .flatMap((repo) => repo.worktrees.map((worktree) => ({ worktree, repoPath: repo.repoPath })))
+);
 
 /**
  * Counts open per-card interactive popovers (e.g. the discard-changes confirmation) so the panel

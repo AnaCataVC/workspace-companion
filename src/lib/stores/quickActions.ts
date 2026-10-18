@@ -73,3 +73,16 @@ export function resetQuickActionsState(): void {
   quickActionResult.set(null);
   quickActionError.set(null);
 }
+
+/**
+ * Opens QuickActionsModal either for all watched repositories or pre-scoped to a single repository.
+ */
+export function openQuickActionsModal(repoPath?: string): void {
+  resetQuickActionsState();
+  if (repoPath) {
+    quickActionScope.set({ singleRepo: { repoPath } });
+  } else {
+    quickActionScope.set('allWatchedRepos');
+  }
+  isQuickActionsModalOpen.set(true);
+}
