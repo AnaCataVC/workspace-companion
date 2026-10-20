@@ -75,3 +75,15 @@ worktrees or local feature branches, `HEAD` is frequently parked on a non-defaul
    default branch (main/master)") from `is_checked_out` ("Cannot delete branch checked out in worktree at <path>"),
    and toast notifications no longer conflate unmerged refusals with protected branches.
 
+---
+
+## Amendment (October 2026): Exact Branch Disambiguation and Homonymous Tag Handling
+
+### Discovered Behavior
+When querying local branches using Git's formatting directive `%(refname:short)`, Git applies DWIM ref disambiguation. If a tag (e.g. `refs/tags/pr568`), pull-request reference, or homonymous object exists in the repository, Git prefixes the branch name with `heads/` (`heads/pr568`) to distinguish it from the tag. Because `git branch -d` strictly expects a branch name relative to `refs/heads/`, passing `heads/pr568` causes Git to search for `refs/heads/heads/pr568` and fail with `error: branch 'heads/pr568' not found`. Furthermore, comparison checks against worktree checked-out branches, `branch -vv`, and `branch --merged` fail to match due to the spurious prefix.
+
+### Refinement
+1. **Strict Segment Stripping (`%(refname:lstrip=2)`):** Branch listing queries across `GitService` and `QuickActionsService` use `%(refname:lstrip=2)` instead of `%(refname:short)`. This strips exactly the `refs/` and `heads/` hierarchy, guaranteeing the pure local branch name regardless of colliding tags.
+2. **Defensive Normalization in `GitService::delete_branch`:** `delete_branch` strips any residual `refs/heads/` or `heads/` prefix defensively before delegating to `git branch -d` / `-D`.
+
+
