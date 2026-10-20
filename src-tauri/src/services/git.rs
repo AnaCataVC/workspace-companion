@@ -146,6 +146,13 @@ impl GitService {
     pub fn build_command<P: AsRef<Path>>(working_dir: P, args: &[&str]) -> Command {
         let mut cmd = Command::new("git");
         cmd.current_dir(working_dir);
+
+        #[cfg(target_os = "windows")]
+        {
+            cmd.arg("-c");
+            cmd.arg("core.longpaths=true");
+        }
+
         cmd.args(args);
         cmd.stdin(Stdio::null());
         cmd.env("GIT_TERMINAL_PROMPT", "0");
@@ -450,7 +457,7 @@ impl GitService {
 
         let local_raw = Self::run_git(
             repo_root,
-            &["branch", "--list", "--format=%(refname:short)|||%(objectname:short)|||%(subject)"],
+            &["branch", "--list", "--format=%(refname:lstrip=2)|||%(objectname:short)|||%(subject)"],
         )?;
 
         let mut entries = Vec::new();
@@ -481,14 +488,20 @@ impl GitService {
     }
 
     /// Deletes a local branch. Uses `-d` (git's own safety net: refuses if the branch is not
-    /// merged into the current branch) unless `force` is set, which uses `-D`.
+    /// merged into the current branch) unless `force` is set, which uses `-D`. Strips any
+    /// disambiguation prefixes (`heads/` or `refs/heads/`) defensively so git branch does not fail.
     pub fn delete_branch<P: AsRef<Path>>(
         repo_path: P,
         branch_name: &str,
         force: bool,
     ) -> Result<(), String> {
+        let clean_branch_name = branch_name
+            .trim()
+            .strip_prefix("refs/heads/")
+            .or_else(|| branch_name.trim().strip_prefix("heads/"))
+            .unwrap_or_else(|| branch_name.trim());
         let flag = if force { "-D" } else { "-d" };
-        Self::run_git(repo_path, &["branch", flag, branch_name])?;
+        Self::run_git(repo_path, &["branch", flag, clean_branch_name])?;
         Ok(())
     }
 
@@ -910,7 +923,7 @@ impl GitService {
         let mut branches = Vec::new();
         let local_raw = Self::run_git(
             repo_root,
-            &["branch", "--list", "--format=%(refname:short)|||%(objectname:short)|||%(subject)"],
+            &["branch", "--list", "--format=%(refname:lstrip=2)|||%(objectname:short)|||%(subject)"],
         )?;
 
         for line in local_raw.lines().filter(|l| !l.trim().is_empty()) {
@@ -1284,6 +1297,14 @@ bare
             Some(dir.path()),
             "Working directory must match the requested path"
         );
+
+        #[cfg(target_os = "windows")]
+        {
+            let args: Vec<_> = cmd.get_args().collect();
+            assert_eq!(args[0], "-c");
+            assert_eq!(args[1], "core.longpaths=true");
+            assert_eq!(args[2], "status");
+        }
     }
 
     #[test]

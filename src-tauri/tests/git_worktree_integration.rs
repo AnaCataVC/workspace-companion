@@ -499,3 +499,41 @@ fn test_detach_worktree_head() {
         "HEAD"
     );
 }
+
+#[test]
+fn test_worktree_removal_with_long_paths_and_readonly_files() {
+    let repo_temp = create_test_repo();
+    let repo_path = repo_temp.path();
+    let repo_str = repo_path.to_str().unwrap().to_string();
+
+    let wt_temp = tempfile::tempdir().unwrap();
+    let wt_path = wt_temp.path().join("wt-longpaths-test");
+    let wt_str = wt_path.to_str().unwrap().to_string();
+
+    GitService::create_worktree(&repo_str, &wt_str, "main", Some("feat/longpaths-test"))
+        .expect("Worktree creation failed");
+
+    // Create a deeply nested directory structure simulating node_modules/virtual stores
+    let mut deep_dir = wt_path.clone();
+    for i in 0..15 {
+        deep_dir = deep_dir.join(format!("nested_package_level_{}", i));
+    }
+    fs::create_dir_all(&deep_dir).expect("Failed to create nested directories");
+
+    let test_file = deep_dir.join("readonly_pkg.json");
+    fs::write(&test_file, r#"{"name": "test-pkg"}"#).expect("Failed to write test file");
+
+    let mut perms = fs::metadata(&test_file).unwrap().permissions();
+    perms.set_readonly(true);
+    fs::set_permissions(&test_file, perms).expect("Failed to set readonly permission");
+
+    let summary = WorktreeCleanerService::remove_worktrees_batch(vec![BatchDeleteTarget {
+        repo_path: repo_str,
+        worktree_path: wt_str,
+        force: true,
+    }]);
+
+    assert_eq!(summary.deleted_count, 1, "Expected deletion to succeed: {:?}", summary.errors);
+    assert!(summary.errors.is_empty(), "No errors expected during longpath/readonly removal");
+    assert!(!wt_path.exists(), "Worktree directory must be completely removed");
+}

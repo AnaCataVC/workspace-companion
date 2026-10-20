@@ -400,6 +400,14 @@ impl QuickActionsService {
                             worktrees_removed += 1;
                         }
                         Err(e) => {
+                            let p = Path::new(&wt.path);
+                            if p.exists() {
+                                let _ = GitService::run_git(repo_root, &["worktree", "prune"]);
+                                if WorktreeCleanerService::force_remove_directory(p).is_ok() {
+                                    worktrees_removed += 1;
+                                    continue;
+                                }
+                            }
                             let lower = e.to_lowercase();
                             if lower.contains("permission denied")
                                 || lower.contains("being used by another process")
@@ -472,6 +480,14 @@ impl QuickActionsService {
                                 worktrees_removed += 1;
                             }
                             Err(e) => {
+                                let p = Path::new(&wt.path);
+                                if p.exists() {
+                                    let _ = GitService::run_git(repo_root, &["worktree", "prune"]);
+                                    if WorktreeCleanerService::force_remove_directory(p).is_ok() {
+                                        worktrees_removed += 1;
+                                        continue;
+                                    }
+                                }
                                 let lower = e.to_lowercase();
                                 if lower.contains("permission denied")
                                     || lower.contains("being used by another process")

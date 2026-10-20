@@ -446,7 +446,89 @@ impl WorktreeCleanerService {
             args.push("--force");
         }
         args.push(worktree_path);
-        GitService::run_git(repo_path, &args).map_err(failed)
+        match GitService::run_git(repo_path, &args) {
+            Ok(msg) => Ok(msg),
+            Err(err) => {
+                // If Git failed during worktree remove (for example, if Git was unable to delete
+                // lingering filesystem entries due to long paths or locked files), check whether Git
+                // already pruned or unlinked the worktree metadata. When `force` is active and the
+                // target is now unregistered in Git, fall back to robust recursive disk cleanup.
+                if force && wt_path.exists() {
+                    let _ = GitService::run_git(repo_path, &["worktree", "prune"]);
+                    if let Ok(TargetState::Unregistered) = Self::classify_target(repo_path, wt_path) {
+                        return Self::force_remove_directory(wt_path)
+                            .map(|_| format!("Removed worktree directory with forced fallback: {}", worktree_path))
+                            .map_err(|e| (format!("Failed to delete directory {}: {}", worktree_path, e), BatchItemErrorKind::Failed));
+                    }
+                }
+                Err(failed(err))
+            }
+        }
+    }
+
+    /// Converts a path to Windows verbatim format (`\\?\...`) to bypass the MAX_PATH (260 char) limit.
+    pub fn to_verbatim_path(path: &Path) -> PathBuf {
+        #[cfg(target_os = "windows")]
+        {
+            let s = path.to_string_lossy();
+            if s.starts_with(r"\\?\") {
+                return path.to_path_buf();
+            }
+            if let Ok(canon) = path.canonicalize() {
+                return canon;
+            }
+            let s_norm = s.replace('/', "\\");
+            if s_norm.len() >= 2 && s_norm.chars().nth(1) == Some(':') {
+                PathBuf::from(format!(r"\\?\{}", s_norm))
+            } else {
+                path.to_path_buf()
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            path.to_path_buf()
+        }
+    }
+
+    /// Recursively removes a directory tree, clearing readonly attributes and supporting long paths.
+    pub fn force_remove_directory(path: &Path) -> std::io::Result<()> {
+        let verbatim = Self::to_verbatim_path(path);
+        if !verbatim.exists() {
+            return Ok(());
+        }
+        Self::remove_dir_recursive(&verbatim)
+    }
+
+    fn remove_dir_recursive(path: &Path) -> std::io::Result<()> {
+        if let Ok(metadata) = std::fs::symlink_metadata(path) {
+            if metadata.file_type().is_symlink() {
+                return std::fs::remove_file(path).or_else(|_| std::fs::remove_dir(path));
+            }
+            let mut perms = metadata.permissions();
+            if perms.readonly() {
+                perms.set_readonly(false);
+                let _ = std::fs::set_permissions(path, perms);
+            }
+        }
+
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            let entry_path = entry.path();
+            if let Ok(metadata) = std::fs::symlink_metadata(&entry_path) {
+                let mut perms = metadata.permissions();
+                if perms.readonly() {
+                    perms.set_readonly(false);
+                    let _ = std::fs::set_permissions(&entry_path, perms);
+                }
+                if metadata.is_dir() && !metadata.file_type().is_symlink() {
+                    Self::remove_dir_recursive(&entry_path)?;
+                } else {
+                    std::fs::remove_file(&entry_path)?;
+                }
+            }
+        }
+
+        std::fs::remove_dir(path)
     }
 
     /// Deletes a directory git has confirmed is not a registered worktree. `git status` cannot
@@ -469,7 +551,7 @@ impl WorktreeCleanerService {
                 BatchItemErrorKind::Skipped,
             ));
         }
-        std::fs::remove_dir_all(wt_path)
+        Self::force_remove_directory(wt_path)
             .map(|_| format!("Removed unregistered worktree directory: {}", worktree_path))
             .map_err(|e| {
                 (
@@ -718,5 +800,31 @@ mod tests {
             result.is_err(),
             "build_single_worktree_info must return Err when worktree does not exist"
         );
+    }
+
+    #[test]
+    fn test_force_remove_directory_handles_long_paths_and_readonly_files() {
+        let dir = tempfile::tempdir().expect("Failed to create temp dir");
+        let target_dir = dir.path().join("deep_target");
+        fs::create_dir_all(&target_dir).expect("Failed to create deep_target");
+
+        // Build deeply nested path structure
+        let mut deep = target_dir.clone();
+        for i in 0..20 {
+            deep = deep.join(format!("level_{}_nested_dir_structure", i));
+        }
+        fs::create_dir_all(&deep).expect("Failed to create nested directories");
+
+        let test_file = deep.join("locked_file.txt");
+        fs::write(&test_file, "data inside deep file").expect("Failed to write deep file");
+
+        // Set file permissions to readonly
+        let mut perms = fs::metadata(&test_file).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&test_file, perms).expect("Failed to set readonly permission");
+
+        let result = WorktreeCleanerService::force_remove_directory(&target_dir);
+        assert!(result.is_ok(), "force_remove_directory failed: {:?}", result);
+        assert!(!target_dir.exists(), "Target directory should be deleted");
     }
 }
