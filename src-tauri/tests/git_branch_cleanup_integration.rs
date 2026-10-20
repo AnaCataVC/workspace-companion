@@ -293,3 +293,47 @@ fn test_merged_branch_deletes_when_head_is_on_feature_branch() {
     assert!(branches.contains("feat/active-wip"), "active branch must remain intact");
 }
 
+#[test]
+fn test_branch_with_homonymous_tag_is_listed_and_deleted_cleanly() {
+    let repo_temp = create_test_repo();
+    let repo_path = repo_temp.path();
+    let repo_path_str = repo_path.to_str().unwrap().to_string();
+
+    // 1. Create a merged branch "pr568" and a tag with the exact same name "pr568"
+    run_git(repo_path, &["branch", "pr568"]).expect("create branch pr568 failed");
+    run_git(repo_path, &["tag", "pr568"]).expect("create tag pr568 failed");
+
+    // 2. list_local_branches_with_status should return "pr568", NOT "heads/pr568"
+    let statuses = GitService::list_local_branches_with_status(&repo_path_str)
+        .expect("list_local_branches_with_status failed");
+    let pr_entry = statuses
+        .iter()
+        .find(|s| s.name == "pr568")
+        .expect("pr568 branch should be found without 'heads/' prefix");
+    assert_eq!(pr_entry.name, "pr568");
+    assert!(pr_entry.is_merged, "pr568 branch should be recognized as merged");
+
+    // 3. Batch delete should delete the branch without error
+    let summary = BranchCleanerService::remove_branches_batch(vec![BranchDeleteTarget {
+        repo_path: repo_path_str.clone(),
+        branch_name: "pr568".to_string(),
+        force: false,
+    }]);
+
+    assert_eq!(summary.deleted_count, 1);
+    assert_eq!(summary.errors.len(), 0);
+
+    // 4. Branch is gone, tag is still there
+    let branches = run_git(repo_path, &["branch", "--list"]).expect("branch --list failed");
+    assert!(!branches.contains("pr568"));
+    let tags = run_git(repo_path, &["tag", "--list"]).expect("tag --list failed");
+    assert!(tags.contains("pr568"));
+
+    // 5. Also test defensive delete_branch if "heads/pr999" was somehow supplied
+    run_git(repo_path, &["branch", "pr999"]).expect("create branch pr999 failed");
+    run_git(repo_path, &["tag", "pr999"]).expect("create tag pr999 failed");
+    GitService::delete_branch(repo_path, "heads/pr999", false)
+        .expect("delete_branch with heads/ prefix should succeed");
+    let branches2 = run_git(repo_path, &["branch", "--list"]).expect("branch --list failed");
+    assert!(!branches2.contains("pr999"));
+}

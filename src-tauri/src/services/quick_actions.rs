@@ -207,7 +207,7 @@ impl QuickActionsService {
 
                 let local_raw = GitService::run_git(
                     repo_root,
-                    &["branch", "--list", "--format=%(refname:short)"],
+                    &["branch", "--list", "--format=%(refname:lstrip=2)"],
                 )
                 .unwrap_or_default();
 
@@ -242,7 +242,7 @@ impl QuickActionsService {
 
                 let local_raw = GitService::run_git(
                     repo_root,
-                    &["branch", "--list", "--format=%(refname:short)"],
+                    &["branch", "--list", "--format=%(refname:lstrip=2)"],
                 )
                 .unwrap_or_default();
 
@@ -430,7 +430,7 @@ impl QuickActionsService {
 
                 let local_raw = GitService::run_git(
                     repo_root,
-                    &["branch", "--list", "--format=%(refname:short)"],
+                    &["branch", "--list", "--format=%(refname:lstrip=2)"],
                 )
                 .unwrap_or_default();
 
@@ -444,7 +444,7 @@ impl QuickActionsService {
                         continue;
                     }
 
-                    match GitService::run_git(repo_root, &["branch", "-D", branch]) {
+                    match GitService::delete_branch(repo_root, branch, true) {
                         Ok(_) => {
                             branches_deleted += 1;
                         }
@@ -525,7 +525,7 @@ impl QuickActionsService {
                 // 5. Delete all local branches except the default branch
                 let local_raw = GitService::run_git(
                     repo_root,
-                    &["branch", "--list", "--format=%(refname:short)"],
+                    &["branch", "--list", "--format=%(refname:lstrip=2)"],
                 )
                 .unwrap_or_default();
 
@@ -534,7 +534,7 @@ impl QuickActionsService {
                     if branch == default_branch || branch == "main" || branch == "master" {
                         continue;
                     }
-                    match GitService::run_git(repo_root, &["branch", "-D", branch]) {
+                    match GitService::delete_branch(repo_root, branch, true) {
                         Ok(_) => {
                             branches_deleted += 1;
                         }
