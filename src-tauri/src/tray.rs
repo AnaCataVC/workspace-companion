@@ -40,7 +40,7 @@ fn position_near_tray<R: Runtime>(window: &WebviewWindow<R>) {
     }
 }
 
-fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
+pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
         position_near_tray(&window);

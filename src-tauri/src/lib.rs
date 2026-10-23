@@ -40,6 +40,9 @@ fn register_toggle_shortcut(app: &tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            tray::show_main_window(app);
+        }))
         .plugin(tauri_plugin_positioner::init())
         .manage(tray::PanelState::default())
         .setup(|app| {

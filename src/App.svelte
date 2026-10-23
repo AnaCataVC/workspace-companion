@@ -617,8 +617,13 @@
     isReleaseBranchModalOpen = true;
   }
 
-  async function handleBranchReleased(event: CustomEvent<{ repoPath: string; branchName: string; deletedWorktreePath?: string }>) {
-    const { repoPath, branchName, deletedWorktreePath } = event.detail;
+  async function handleBranchReleased(event: CustomEvent<{
+    repoPath: string;
+    branchName: string;
+    deletedWorktreePath?: string;
+    updatedWorktree?: WorktreeInfo;
+  }>) {
+    const { repoPath, branchName, deletedWorktreePath, updatedWorktree } = event.detail;
     isReleaseBranchModalOpen = false;
     selectedBranchForRelease = null;
 
@@ -636,6 +641,23 @@
           .filter((r) => r.worktrees.length > 0)
       );
       batchSelection.deselect(deletedWorktreePath);
+    } else if (updatedWorktree) {
+      scannedRepos.update((repos) =>
+        repos.map((r) =>
+          r.repoPath === repoPath
+            ? { ...r, worktrees: r.worktrees.map((w) => (w.path === updatedWorktree.path ? updatedWorktree : w)) }
+            : r
+        )
+      );
+      if (updatedWorktree.branch) {
+        scannedBranches.update((branches) =>
+          branches.map((b) =>
+            b.repoPath === repoPath && b.name === updatedWorktree.branch
+              ? { ...b, isCheckedOut: true, checkedOutWorktreePath: updatedWorktree.path }
+              : b
+          )
+        );
+      }
     }
 
     notifications.success('Branch released', `${branchName} was deleted.`);

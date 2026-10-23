@@ -1,12 +1,13 @@
 <script lang="ts">
-  import type { BranchStatusEntry, BranchBatchDeleteSummary, WorktreeInfo } from '../types';
-  import { Unlock, X, AlertTriangle, ShieldAlert, Trash2, GitBranch, Loader2 } from 'lucide-svelte';
+  import type { BranchStatusEntry, BranchBatchDeleteSummary, WorktreeInfo, CheckoutBranchResult } from '../types';
+  import { Unlock, X, AlertTriangle, ShieldAlert, Trash2, GitBranch, Loader2, ArrowRightLeft } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
   import { invokeTauri } from '../utils/ipc';
   import { closeOnEscape } from '../actions/closeOnEscape';
   import { autofocus } from '../actions/autofocus';
   import { toErrorMessage } from '../utils/errors';
   import { scannedRepos } from '../stores/worktrees';
+  import { scannedBranches } from '../stores/branchCleaner';
   import DiscardChangesPanel from './DiscardChangesPanel.svelte';
 
   export let isOpen: boolean = false;
@@ -15,7 +16,12 @@
   const dispatch = createEventDispatcher<{
     close: void;
     worktreeDiscarded: { worktree: WorktreeInfo; repoPath: string };
-    released: { repoPath: string; branchName: string; deletedWorktreePath?: string };
+    released: {
+      repoPath: string;
+      branchName: string;
+      deletedWorktreePath?: string;
+      updatedWorktree?: WorktreeInfo;
+    };
   }>();
 
   /** Same fixed literal as the batch dialogs: one keyword everywhere reads as "the irreversible one". */
@@ -28,15 +34,28 @@
   let deletedWorktreePathForPending: string | null = null;
   let lastBranchKey = '';
 
-  // The worktree is looked up live from the scan store (not copied into local state) so that a
-  // discard applied through `DiscardChangesPanel` — which only updates the store via the
-  // `worktreeDiscarded` event — is reflected here automatically.
+  // The worktrees of this repository
+  $: repoWorktrees = branch
+    ? $scannedRepos.find((r) => r.repoPath === branch.repoPath)?.worktrees ?? []
+    : [];
+
+  // The worktree is looked up live from the scan store
   $: worktree = branch?.checkedOutWorktreePath
-    ? $scannedRepos
-        .find((r) => r.repoPath === branch!.repoPath)
-        ?.worktrees.find((w) => w.path === branch!.checkedOutWorktreePath) ?? null
+    ? repoWorktrees.find((w) => w.path === branch!.checkedOutWorktreePath) ?? null
     : null;
   $: isDirty = worktree?.isDirty ?? false;
+  $: isMainWorktree = worktree?.isMain ?? false;
+
+  // Resolve default branch for this repository
+  $: defaultBranch = branch
+    ? $scannedBranches.find((b) => b.repoPath === branch.repoPath && b.isDefault)?.name || 'main'
+    : 'main';
+
+  // Check if default branch is checked out by any OTHER worktree in this repo
+  $: isDefaultBranchOccupied = branch
+    ? repoWorktrees.some((w) => w.path !== branch!.checkedOutWorktreePath && w.branch === defaultBranch)
+    : false;
+
   $: isForceConfirmed = forceConfirmText.trim().toUpperCase() === FORCE_KEYWORD;
 
   // Resets on a change of target branch, not on close: reopening over the same branch keeps intent.
@@ -60,7 +79,7 @@
   }
 
   /** Deletes the branch itself; a `skipped` result the first time means it needs an explicit force retry. */
-  async function deleteBranch(force: boolean) {
+  async function deleteBranch(force: boolean, updatedWorktree?: WorktreeInfo) {
     if (!branch) return;
     try {
       const summary = await invokeTauri<BranchBatchDeleteSummary>('remove_branches_batch', {
@@ -71,7 +90,8 @@
         dispatch('released', {
           repoPath: branch.repoPath,
           branchName: branch.name,
-          deletedWorktreePath: deletedWorktreePathForPending ?? undefined
+          deletedWorktreePath: deletedWorktreePathForPending ?? undefined,
+          updatedWorktree
         });
         return;
       }
@@ -85,6 +105,26 @@
     } catch (err: unknown) {
       errorMessage = toErrorMessage(err, 'Failed to delete the branch');
     } finally {
+      isBusy = false;
+    }
+  }
+
+  async function handleSwitchToDefaultAndDelete() {
+    if (!branch?.checkedOutWorktreePath || isBusy || isDirty || isDefaultBranchOccupied) return;
+    isBusy = true;
+    errorMessage = null;
+    try {
+      const res = await invokeTauri<CheckoutBranchResult>('checkout_worktree_branch', {
+        worktreePath: branch.checkedOutWorktreePath,
+        targetBranch: defaultBranch
+      });
+      const freshWorktree = res?.worktreeInfo ?? null;
+      if (freshWorktree) {
+        dispatch('worktreeDiscarded', { worktree: freshWorktree, repoPath: branch.repoPath });
+      }
+      await deleteBranch(false, freshWorktree ?? undefined);
+    } catch (err: unknown) {
+      errorMessage = toErrorMessage(err, `Failed to checkout ${defaultBranch}`);
       isBusy = false;
     }
   }
@@ -103,7 +143,7 @@
   }
 
   async function handleDeleteWorktreeAndBranch() {
-    if (!branch?.checkedOutWorktreePath || isBusy || isDirty) return;
+    if (!branch?.checkedOutWorktreePath || isBusy || isDirty || isMainWorktree) return;
     isBusy = true;
     errorMessage = null;
     try {
@@ -221,24 +261,58 @@
         </p>
 
         <div class="flex flex-col gap-2">
+          {#if !isDefaultBranchOccupied}
+            <button
+              type="button"
+              on:click={handleSwitchToDefaultAndDelete}
+              disabled={isBusy}
+              class="w-full text-left px-3 py-2 rounded-lg bg-indigo-950/40 hover:bg-indigo-900/50 border border-indigo-700/60 hover:border-indigo-500 disabled:opacity-50 transition-colors group cursor-pointer"
+            >
+              <div class="flex items-center justify-between">
+                <p class="text-xs font-medium text-indigo-100 flex items-center gap-1.5">
+                  <ArrowRightLeft size={13} class="text-indigo-400 group-hover:text-indigo-300" />
+                  <span>Switch to <strong class="font-mono text-indigo-300">{defaultBranch}</strong> &amp; delete</span>
+                </p>
+                <span class="text-[10px] uppercase font-semibold text-indigo-300 bg-indigo-900/60 px-1.5 py-0.5 rounded border border-indigo-700/50">
+                  Recommended
+                </span>
+              </div>
+              <p class="text-[11px] text-neutral-400 mt-1">
+                Checks out <span class="font-mono text-neutral-300">{defaultBranch}</span> in this worktree, freeing <span class="font-mono text-neutral-300">{branch.name}</span>, then deletes it.
+              </p>
+            </button>
+          {:else}
+            <div class="px-3 py-2 rounded-lg bg-neutral-900 border border-neutral-800 text-[11px] text-neutral-400">
+              <span class="font-semibold text-neutral-300">Note:</span> Default branch <span class="font-mono text-neutral-300">{defaultBranch}</span> is already checked out at another worktree.
+            </div>
+          {/if}
+
+          {#if !isMainWorktree}
+            <button
+              type="button"
+              on:click={handleDeleteWorktreeAndBranch}
+              disabled={isBusy}
+              class="w-full text-left px-3 py-2 rounded-lg bg-neutral-850 hover:bg-rose-950/60 border border-neutral-750 hover:border-rose-800/60 disabled:opacity-50 transition-colors cursor-pointer"
+            >
+              <p class="text-xs font-medium text-neutral-100 flex items-center gap-1.5">
+                <Trash2 size={13} class="text-rose-400" />
+                <span>Delete worktree &amp; branch</span>
+              </p>
+              <p class="text-[11px] text-neutral-400 mt-0.5">Removes the worktree folder entirely, then deletes the branch.</p>
+            </button>
+          {/if}
+
           <button
             type="button"
             on:click={handleDetachAndDelete}
             disabled={isBusy}
-            class="w-full text-left px-3 py-2 rounded-lg bg-neutral-850 hover:bg-neutral-800 border border-neutral-750 hover:border-neutral-700 disabled:opacity-50 transition-colors"
+            class="w-full text-left px-3 py-2 rounded-lg bg-neutral-850 hover:bg-neutral-800 border border-neutral-750 hover:border-neutral-700 disabled:opacity-50 transition-colors cursor-pointer"
           >
-            <p class="text-xs font-medium text-neutral-100">Detach &amp; delete branch</p>
-            <p class="text-[11px] text-neutral-400">Keeps the worktree folder, detaches its HEAD, then deletes the branch.</p>
-          </button>
-
-          <button
-            type="button"
-            on:click={handleDeleteWorktreeAndBranch}
-            disabled={isBusy}
-            class="w-full text-left px-3 py-2 rounded-lg bg-neutral-850 hover:bg-rose-950/60 border border-neutral-750 hover:border-rose-800/60 disabled:opacity-50 transition-colors"
-          >
-            <p class="text-xs font-medium text-neutral-100">Delete worktree &amp; branch</p>
-            <p class="text-[11px] text-neutral-400">Removes the worktree folder entirely, then deletes the branch.</p>
+            <p class="text-xs font-medium text-neutral-100 flex items-center gap-1.5">
+              <Unlock size={13} class="text-amber-400" />
+              <span>Detach HEAD &amp; delete branch</span>
+            </p>
+            <p class="text-[11px] text-neutral-400 mt-0.5">Keeps the worktree folder, detaches its HEAD, then deletes the branch.</p>
           </button>
         </div>
       {/if}

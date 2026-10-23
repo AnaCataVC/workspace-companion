@@ -117,10 +117,10 @@
         type="button"
         on:click={() => dispatch('requestRelease', branch)}
         title="Free this branch from its worktree and delete it"
-        class="px-2 py-1 rounded bg-neutral-800/80 hover:bg-amber-950/80 border border-neutral-700/60 hover:border-amber-700/60 text-neutral-300 hover:text-amber-300 flex items-center gap-1.5 transition-colors text-[11px]"
+        class="px-2.5 py-1 rounded bg-amber-950/40 hover:bg-amber-900/60 border border-amber-800/60 hover:border-amber-700 text-amber-200 hover:text-amber-100 flex items-center gap-1.5 transition-colors text-[11px] font-medium cursor-pointer shadow-xs"
       >
         <Unlock size={12} />
-        <span>Release</span>
+        <span>Release / Delete...</span>
       </button>
     {/if}
     <button
