@@ -380,7 +380,7 @@ impl GitService {
     /// branch vs. upstream deleted). `check_orphan_status` collapses both into one "orphaned"
     /// bucket for the worktree cleaner; the branch cleaner needs them separately so it can offer
     /// "Merged" and "Remote gone" as distinct filters.
-    pub(crate) fn branch_status_flags(
+    pub fn branch_status_flags(
         short_branch: &str,
         context: &RepoOrphanContext,
     ) -> (bool, bool) {

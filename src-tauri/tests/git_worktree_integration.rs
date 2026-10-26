@@ -537,3 +537,71 @@ fn test_worktree_removal_with_long_paths_and_readonly_files() {
     assert!(summary.errors.is_empty(), "No errors expected during longpath/readonly removal");
     assert!(!wt_path.exists(), "Worktree directory must be completely removed");
 }
+
+#[test]
+fn test_locked_worktree_detection_and_safety() {
+    let repo_temp = create_test_repo();
+    let repo_path = repo_temp.path();
+    let repo_str = repo_path.to_str().unwrap().to_string();
+
+    let wt_temp = tempfile::tempdir().unwrap();
+    let wt_path = wt_temp.path().join("wt-locked-test");
+    let wt_str = wt_path.to_str().unwrap().to_string();
+
+    // 1. Create worktree
+    GitService::create_worktree(&repo_str, &wt_str, "main", Some("feat/locked-scenario"))
+        .expect("Worktree creation failed");
+
+    // 2. Lock worktree with a custom reason
+    let lock_reason = "Manual maintenance in progress";
+    run_git(
+        repo_path,
+        &["worktree", "lock", "--reason", lock_reason, &wt_str],
+    )
+    .expect("git worktree lock failed");
+
+    // 3. Verify scan detects lock reason
+    let repo_scan = WorktreeCleanerService::scan_repository(repo_path, None, None)
+        .expect("scan failed")
+        .expect("repository should be found");
+
+    let locked_wt = repo_scan
+        .worktrees
+        .iter()
+        .find(|w| w.branch.as_deref() == Some("refs/heads/feat/locked-scenario"))
+        .expect("Locked worktree must be found in scan");
+
+    assert_eq!(
+        locked_wt.locked.as_deref(),
+        Some(lock_reason),
+        "Worktree locked property must match reason"
+    );
+
+    // 4. Attempt unforced removal: Git blocks removal of locked worktrees
+    let unforced_res = WorktreeCleanerService::remove_worktree(repo_path, &locked_wt.path, false);
+    assert!(
+        unforced_res.is_err(),
+        "Unforced removal of locked worktree must be rejected"
+    );
+    assert!(wt_path.exists(), "Worktree directory must still exist after rejected removal");
+
+    // 5. Unlock worktree via GitService
+    let unlock_res = GitService::unlock_worktree(repo_path, &locked_wt.path);
+    assert!(unlock_res.is_ok(), "unlock_worktree should succeed");
+
+    // 6. Verify scan shows unlocked
+    let repo_scan_after = WorktreeCleanerService::scan_repository(repo_path, None, None)
+        .expect("scan failed")
+        .expect("repository should be found");
+    let unlocked_wt = repo_scan_after
+        .worktrees
+        .iter()
+        .find(|w| w.branch.as_deref() == Some("refs/heads/feat/locked-scenario"))
+        .expect("Worktree must still be found");
+    assert_eq!(unlocked_wt.locked, None, "Worktree must now be unlocked");
+
+    // 7. Now clean removal succeeds
+    let remove_res = WorktreeCleanerService::remove_worktree(repo_path, &unlocked_wt.path, false);
+    assert!(remove_res.is_ok(), "Removal after unlock must succeed: {:?}", remove_res.err());
+    assert!(!wt_path.exists(), "Worktree directory must be removed");
+}
