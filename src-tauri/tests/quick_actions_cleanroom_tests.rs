@@ -38,6 +38,7 @@ impl GitTestEnv {
         env.run_git(&["config", "user.name", "Cleanroom Tester"]);
         env.run_git(&["config", "user.email", "cleanroom@test.local"]);
         env.run_git(&["config", "commit.gpgsign", "false"]);
+        env.run_git(&["config", "core.autocrlf", "false"]);
 
         // Create baseline README and initial commit on main
         let readme_path = env.repo_path.join("README.md");

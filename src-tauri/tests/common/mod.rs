@@ -32,6 +32,7 @@ pub fn create_test_repo() -> TempDir {
     run_git(p, &["config", "user.name", "Integration Tester"]).expect("config user.name failed");
     run_git(p, &["config", "user.email", "tester@workspace-companion.test"])
         .expect("config user.email failed");
+    run_git(p, &["config", "core.autocrlf", "false"]).expect("config core.autocrlf failed");
 
     let readme = p.join("README.md");
     fs::write(&readme, "# Integration Test Workspace\n").expect("write readme failed");
