@@ -184,3 +184,16 @@ Workspace Companion is designed to be operated without leaving the keyboard:
 | `↑` / `↓` | Branch Switcher Modal | Move the highlighted branch |
 | `Enter` | Branch Switcher Modal | Checkout the highlighted branch |
 | `Enter` / `Escape` | Fast Worktree Creator & New Worktree Modal branch field | Create now / clear and collapse |
+
+
+---
+
+## 10. Visual Walkthrough & Demo Guide
+
+For portfolio presentations and animated screencasts, the canonical 15-second visual demonstration covers:
+
+1. **Tray Slide-Out (0s–3s)**: Click the system tray icon or trigger `Alt+Space` to reveal the Spotlight-style floating window next to the tray.
+2. **Worktree Discovery (3s–6s)**: Automatic parsing of local repositories with dirty indicator badges (`● dirty (N)`), orphaned branch indicators, and commit hashes.
+3. **Dirty-State Inspection (6s–9s)**: Hovering over the `● dirty` badge reveals the modified file list without leaving the main dashboard.
+4. **Instant IDE Launch (9s–12s)**: 1-click launch of VS Code / Antigravity IDE and Windows Terminal directly scoped to the selected worktree's filesystem directory.
+5. **Safe Batch Cleanup Barrier (12s–15s)**: Multi-selecting secondary worktrees and triggering `Delete Selected`, showcasing the pre-flight dirty check and safety confirmation barrier preventing data loss.

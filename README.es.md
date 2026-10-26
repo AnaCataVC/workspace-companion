@@ -6,6 +6,7 @@
 
 [English](README.md) | [Español](README.es.md)
 
+[![CI](https://github.com/AnaCataVC/workspace-companion/actions/workflows/ci.yml/badge.svg)](https://github.com/AnaCataVC/workspace-companion/actions/workflows/ci.yml)
 [![Rust](https://img.shields.io/badge/Rust-1.97%2B-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Tauri v2](https://img.shields.io/badge/Tauri-v2-blue?logo=tauri&logoColor=white)](https://v2.tauri.app)
 [![Svelte 5](https://img.shields.io/badge/Svelte-v5-ff3e00?logo=svelte&logoColor=white)](https://svelte.dev)
@@ -14,7 +15,6 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
-
 
 ### 1. Descripción del Proyecto
 **Worktree & Workspace Companion** es una micro-herramienta nativa y ultra-ligera residente en la bandeja del sistema (*System Tray*) de Windows con ventana flotante estilo Spotlight, diseñada para potenciar la productividad gestionando Git Worktrees y múltiples cuentas de GitHub CLI.
@@ -30,38 +30,68 @@
   - **Mostrar/ocultar**: un clic en el ícono del tray, o **Alt+Space** desde cualquier lugar (atajo global; si otra aplicación ya lo usa, el tray sigue funcionando).
   - **Ocultar**: la **X** de la ventana y **Esc** (sin ningún diálogo abierto) ocultan el panel en la bandeja en vez de cerrar la aplicación; para salir, usa el menú del tray.
   - **Siempre visible (Pin)**: la ventana permanece visible como una aplicación estándar sin desaparecer al moverla o cambiar de foco; el botón **Pin** alterna *Always on Top* para mantenerla encima de otras ventanas. El estado del pin se guarda y se restaura al volver a abrir la aplicación.
-- 🛡️ **Acciones destructivas más seguras**: descartar cambios antes de cambiar de rama muestra los archivos que se perderán y solo habilita la confirmación tras una breve espera; el borrado en lote revalida cada worktree seleccionado contra el último escaneo y marca las selecciones ocultas por el filtro activo.
 
-#### 🧭 Anatomía de la Interfaz:
+#### 🎬 Interfaz Visual del Producto:
 Cada fila de worktree muestra en paralelo el **Badge de Rama Git** (botón interactivo para alternar ramas a la izquierda) y la **Carpeta Física** (nombre del directorio a la derecha referenciado por herramientas CLI y agentes de IA):
 ```text
-┌────────────────────────────┐       ┌────────────────┐
-│ [⎇] feature/nombre-rama [▼]│       │ carpeta-worktr │   [● dirty]   [🚀 IDE] [>_] [📁] [🗑]
-└────────────────────────────┘       └────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│ [Icon] WORKSPACE COMPANION             [▦/▤ View] [+ New] [@gh-user] [⚙] [⚡] [📌] [↻]│ Top Toolbar
+├──────────────────────────────────────────────────────────────────────────┤
+│ 🔍 Filter worktree, branch or path...                                    │ Quick Search
+├──────────────────────────────────────────────────────────────────────────┤
+│ [📁 workspace-companion] [3 worktrees] [@AnaCataVC]        [Select All] [🧹 Clean]│ Encabezado de Repo
+│                                                                          │
+│  ⚓ [ ⎇ main ▼ ]             workspace-companion  [● clean]      [🚀] [>_] [📁]    │ Worktree Principal
+│  ├─ [ ⎇ feat/e2e-benchmarks▼] companion-benchmarks [▲ Orphan]     [🚀] [>_] [📁] [🗑]│ Worktree Vinculado 1
+│  └─ [ ⎇ fix/lock-safety   ▼] companion-safety     [● dirty (2)]  [🚀] [>_] [📁] [🗑]│ Worktree Vinculado 2
+│                                                                          │
+│  [+ Fast Worktree: branch-name                       ] [⚡ Create & Launch]│ Creador Rápido
+├──────────────────────────────────────────────────────────────────────────┤
+│ [ 2 worktrees seleccionados ]                     [✕ Cancel] [🗑 Delete Selected]│ Barra Flotante de Lote
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 Para conocer el desglose detallado de todos los botones de la barra de herramientas, indicadores de estado y modos de vista, consulta la **[Guía de Interfaz de Usuario y Navegación](docs/ui-guide.md)**.
 
 ---
 
-### 2. Tecnologías Utilizadas
+### 2. Modelo de Seguridad y Guardas de Protección de Datos
+
+Workspace Companion automatiza operaciones Git de alto impacto sin arriesgar la integridad del repositorio ni perder trabajo no guardado:
+
+1. 🛡️ **Guarda Preventiva de Estado Sucio (*Dirty-State Preflight*)**: Antes de eliminar cualquier worktree o cambiar de rama, el motor ejecuta una inspección no destructiva vía `git status --porcelain`. Los worktrees con cambios no commiteados, unstaged o archivos sin seguimiento quedan protegidos contra borrado a menos que se sobreescriba explícitamente en dos pasos.
+2. 🔍 **Auditoría de Commits sin Pushear y Sincronización Remota**: Antes de ejecutar operaciones masivas de limpieza (en Quick Actions o Limpiador de Ramas), el sistema audita commits contra upstream (`@{u}`) y destinos de push (`@{push}`). Cualquier commit local no publicado se resalta en el resumen de impacto con conteo de commits y autoría.
+3. 🔒 **Invariantes de Protección para Ramas Activas y por Defecto**: La rama por defecto del repositorio (`main` / `master`) y cualquier rama activa vinculada a un worktree abierto gozan de protección estricta. No pueden eliminarse bajo ninguna circunstancia, ni forzando el borrado.
+4. 🔄 **Revalidación Dinámica contra el Último Estado**: El estado real de los directorios se revalida contra el sistema de archivos inmediatamente antes de iniciar el borrado en lote, evitando condiciones de carrera contra selecciones de vista desactualizadas.
+5. ⏱️ **Barreras de Confirmación y Armado en Dos Fases**: Las limpiezas masivas de alto impacto exigen confirmaciones armadas: los preajustes destructivos requieren una espera de 3 segundos o confirmación explícita escribiendo `"RESET"` o `"FORCE"`.
+6. 📁 **Rutas Largas en Windows y Eliminación Resiliente en Disco**: Para prevenir errores `Filename too long` (`ENAMETOOLONG`) o `AccessDenied (os error 5)` en árboles profundos (como `node_modules` anidados), la limpieza en disco utiliza sintaxis verbatim de Windows (`\\?\`), retira atributos `READONLY` antes del borrado y desenlaza symlinks/junctions de manera segura sin recorrer recursivamente árboles ajenos.
+
+---
+
+### 3. Tecnologías Utilizadas
 - **Backend**: Rust 1.97+, Tauri v2 (`TrayIconBuilder`, `tauri-plugin-positioner`, `tauri-plugin-global-shortcut`).
 - **Frontend**: Svelte 5, TypeScript, Tailwind CSS, Lucide Icons.
 - **Integración con el SO**: Protocolo Porcelain de Git, GitHub CLI (`gh`), Win32 `CREATE_NO_WINDOW`.
 
 ---
 
-### 3. Aprendizajes Clave
+### 4. Aprendizajes Clave y Decisiones Arquitectónicas
 - **Ergonomía de subprocesos en Windows**: Suprimir ventanas de consola emergentes al invocar `git` y `gh` en segundo plano mediante flags Win32 (`CREATE_NO_WINDOW`).
 - **Disambiguación entre IDE y CLI**: Diferenciar entre aplicaciones GUI de escritorio (ej. `Antigravity.exe`) y utilidades CLI auxiliares (`agy.exe`) para un lanzamiento predecible del espacio de trabajo.
 - **Migración resiliente de configuración**: Uso de `#[serde(default)]` en Rust y nullish coalescing en TypeScript para garantizar compatibilidad hacia atrás total y prevenir fallos de deserialización al extender el esquema de configuración.
 - **Guardas de seguridad en herramientas destructivas**: Validación preventiva obligatoria (`git status --porcelain`) antes de ejecutar `git worktree remove`.
-- **Caché de contexto por repositorio y actualizaciones parciales**: Calcular los datos de detección de huérfanos (rama por defecto, `branch -vv`, `branch --merged`) una sola vez por repositorio, en vez de una vez por worktree, reduce ~5x los subprocesos lanzados en repos con varios worktrees; parchar la lista de worktrees en memoria tras una sola mutación —en vez de re-escanear todas las carpetas vigiladas— evita que la interfaz se vea vacía por un instante y evita pagar ese costo por el cambio de un solo worktree.
+- **Caché de contexto por repositorio y actualizaciones parciales**: Calcular los datos de detección de huérfanos (rama por defecto, `branch -vv`, `branch --merged`) una sola vez por repositorio, en vez de una vez por worktree, reduce ~5x los subprocesos lanzados en repos con varios worktrees ([ver benchmark reproducible](docs/benchmarks/context-caching-benchmark.md)); parchar la lista de worktrees en memoria tras una sola mutación evita que la interfaz parpadee vacía.
 - **Limpieza masiva atómica y aislamiento de bloqueos en Git**: Encadenar operaciones destructivas en múltiples repositorios exige una concurrencia estrictamente acotada: paralelizar entre repositorios independientes mediante Rayon (`par_iter`), manteniendo una ejecución estrictamente secuencial dentro de cada repositorio para evitar colisiones por `.git/index.lock` y bloqueos de archivos en Windows.
 
 ---
 
-### 4. Instrucciones de Configuración Local
+### 5. Compilación, Ejecución y Pruebas Automatizadas
 
+#### Requisitos Previos
+- [Node.js](https://nodejs.org/) (v20+ recomendado) y `npm`
+- [Rust & Cargo](https://rustup.rs/) (v1.80+)
+- [Git](https://git-scm.com/) y [GitHub CLI](https://cli.github.com/)
+
+#### Instalación y Desarrollo
 ```powershell
 # 1. Clonar el repositorio
 git clone https://github.com/AnaCataVC/workspace-companion.git
@@ -70,15 +100,38 @@ cd workspace-companion
 # 2. Instalar dependencias
 npm install
 
-# 3. Ejecutar en modo desarrollo con Tauri
+# 3. Ejecutar en modo desarrollo con Tauri (Hot Module Reloading)
 npx tauri dev
+
+# 4. Vista previa local del frontend
+npm run dev
 ```
+
+#### Pruebas Automatizadas y Verificación
+Workspace Companion implementa una pirámide integral de pruebas automatizadas que abarca tanto servicios backend en Rust como componentes frontend en Svelte:
+
+```powershell
+# Ejecutar suite de pruebas backend en Rust (Unitarias, Integración y Benchmarks)
+cd src-tauri; cargo test; cd ..
+
+# Ejecutar benchmark reproducible de caché de contexto (~5x reducción de subprocesos)
+cd src-tauri; cargo test --test context_caching_benchmark -- --nocapture; cd ..
+
+# Verificación de tipos en frontend y compilación de producción
+npm run check
+npm run build
+```
+
+**Quality Gates Automatizados en CI:**
+- 🛡️ **Repositorios Git Temporales y Desechables**: Repositorios reales generados con `tempfile` que validan 9 escenarios ortogonales: worktrees limpios y sucios, `HEAD` desacoplado, ramas remotas eliminadas, ramas mergeadas, protección de ramas principales, auditoría de commits sin pushear, worktrees bloqueados (`git worktree lock`), rutas largas de Windows y eliminación segura de carpetas.
+- ⚡ **Cero Regresiones y Concurrencia Acotada**: 100% de éxito en pruebas automatizadas con límites estrictos de concurrencia (Rayon `par_iter` entre repositorios; secuencial dentro de cada repositorio para eliminar bloqueos de `.git/index.lock`).
 
 ---
 
-### 5. Documentación y Decisiones Arquitectónicas
+### 6. Documentación y Decisiones Arquitectónicas
 - 🧭 [Guía de Interfaz de Usuario y Navegación](docs/ui-guide.md)
 - 📖 [Arquitectura Técnica y Diseño](docs/architecture.md)
+- 📊 [Benchmark: Reducción de Subprocesos y Caché de Contexto](docs/benchmarks/context-caching-benchmark.md)
 - 🏛️ [Registro de Decisiones Arquitectónicas (ADRs)](docs/adr/)
   - [ADR 0001: Integración con System Tray y Posicionamiento de Ventana](docs/adr/0001-tauri-v2-system-tray-and-window-positioning.md)
   - [ADR 0002: Flag Win32 de Creación de Subprocesos](docs/adr/0002-windows-subprocess-no-window-flag.md)
@@ -95,4 +148,3 @@ npx tauri dev
 ## Licencia
 
 Este proyecto está bajo la Licencia MIT. Consulta el archivo [LICENSE](LICENSE) para más detalles.
-

@@ -28,3 +28,7 @@ This had two compounding costs:
 - **Negative**:
   - Two enrichment entry points (`scan_repository`'s loop and `build_single_worktree_info`) must be kept behaviorally identical by construction. They already share `enrich_worktree_info`/`mark_main_worktree`, but a future change to worktree enrichment must remember both call sites exist.
   - The frontend's delta-patch path silently falls back to a full rescan if `worktreeInfo` is ever missing from a mutation response (e.g. an older or mocked backend), which reads as ordinary "why did the whole list refresh" behavior rather than a hard error — worth checking first if that fallback ever fires in practice.
+
+## Empirical Verification & Benchmark
+The ~5x reduction in subprocess spawns and corresponding 5.1x latency speedup is verified empirically via automated tests in `src-tauri/tests/context_caching_benchmark.rs`. See the complete measurement data and analysis in [Benchmark: Subprocess Reduction & Context Caching](../benchmarks/context-caching-benchmark.md).
+

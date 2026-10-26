@@ -6,6 +6,7 @@
 
 [English](README.md) | [Español](README.es.md)
 
+[![CI](https://github.com/AnaCataVC/workspace-companion/actions/workflows/ci.yml/badge.svg)](https://github.com/AnaCataVC/workspace-companion/actions/workflows/ci.yml)
 [![Rust](https://img.shields.io/badge/Rust-1.97%2B-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Tauri v2](https://img.shields.io/badge/Tauri-v2-blue?logo=tauri&logoColor=white)](https://v2.tauri.app)
 [![Svelte 5](https://img.shields.io/badge/Svelte-v5-ff3e00?logo=svelte&logoColor=white)](https://svelte.dev)
@@ -29,37 +30,61 @@
   - **Toggle**: single-click the tray icon, or press **Alt+Space** from anywhere (global shortcut; if another app already owns it, the tray still works).
   - **Hide**: the window's **X** and **Esc** (with no dialog open) hide the panel to the tray instead of quitting; quit from the tray menu.
   - **Always on Top (Pin)**: the window stays visible as a standard desktop application without disappearing when moved or blurred; clicking the **Pin** button toggles *Always on Top* so it stays above other windows. The pin state is saved and restored on next launch.
-- 🛡️ **Safer destructive actions**: discarding changes before a branch switch lists the files that will be lost and only arms the confirm button after a short delay; batch delete re-checks each selected worktree against the latest scan and flags selections hidden by the current filter.
 
-#### 🧭 UI Anatomy at a Glance:
-Each worktree row displays the **Git Branch Badge** (left interactive button to switch branches) and the **Physical Folder Path** (center/right name referenced by CLI tools and AI agents) side-by-side:
+#### 🎬 Visual Product Interface:
+Each worktree row displays the **Git Branch Badge** (interactive button to switch branches) and the **Physical Folder Path** (directory name referenced by CLI tools and AI agents) side-by-side:
 ```text
-┌────────────────────────────┐       ┌────────────────┐
-│ [⎇] feature/branch-name [▼]│       │ worktree-folder│   [● dirty]   [🚀 IDE] [>_] [📁] [🗑]
-└────────────────────────────┘       └────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│ [Icon] WORKSPACE COMPANION             [▦/▤ View] [+ New] [@gh-user] [⚙] [⚡] [📌] [↻]│ Top Toolbar
+├──────────────────────────────────────────────────────────────────────────┤
+│ 🔍 Filter worktree, branch or path...                                    │ Quick Search
+├──────────────────────────────────────────────────────────────────────────┤
+│ [📁 workspace-companion] [3 worktrees] [@AnaCataVC]        [Select All] [🧹 Clean]│ Repo Section Header
+│                                                                          │
+│  ⚓ [ ⎇ main ▼ ]             workspace-companion  [● clean]      [🚀] [>_] [📁]    │ Root Worktree
+│  ├─ [ ⎇ feat/e2e-benchmarks▼] companion-benchmarks [▲ Orphan]     [🚀] [>_] [📁] [🗑]│ Linked Worktree 1
+│  └─ [ ⎇ fix/lock-safety   ▼] companion-safety     [● dirty (2)]  [🚀] [>_] [📁] [🗑]│ Linked Worktree 2
+│                                                                          │
+│  [+ Fast Worktree: branch-name                       ] [⚡ Create & Launch]│ Inline Quick Creator
+├──────────────────────────────────────────────────────────────────────────┤
+│ [ 2 worktrees selected ]                          [✕ Cancel] [🗑 Delete Selected]│ Floating Batch Bar
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 For a comprehensive breakdown of all toolbar buttons, status indicators, and view density modes, see the **[User Interface & Navigation Guide](docs/ui-guide.md)**.
 
 ---
 
-### 2. Technologies Used
+### 2. Safety Model & Data Protection Guardrails
+
+Worktree & Workspace Companion automates high-consequence Git operations without sacrificing repository integrity or risking uncommitted developer work:
+
+1. 🛡️ **Dirty-State Preflight Guard**: Before deleting any worktree or switching branches, the engine executes a non-destructive pre-flight audit via `git status --porcelain`. Worktrees with uncommitted, unstaged, or untracked changes cannot be removed without explicit two-stage override.
+2. 🔍 **Unpushed-Commit & Remote Sync Audit**: Prior to destructive bulk actions (such as Quick Actions or Branch Cleaner), the system audits commits against upstream (`@{u}`) and push targets (`@{push}`). Any unpushed local commit is flagged in the impact summary with commit count and author metadata.
+3. 🔒 **Protected & Checked-Out Invariants**: The repository's default branch (`main` / `master`) and any branch currently checked out in an active worktree are strictly protected. They cannot be deleted or forced-deleted under any circumstance.
+4. 🔄 **Latest-State Revalidation**: Target states are dynamically re-verified against the physical filesystem immediately before batch deletion begins, preventing race conditions or execution on stale filter results.
+5. ⏱️ **Two-Stage Arming & Confirmation Barriers**: High-impact bulk cleanups feature armed confirmation triggers: destructive presets require a 3-second arming delay or explicit typed confirmation (`"RESET"` or `"FORCE"`).
+6. 📁 **Windows Long Paths & Verbatim Filesystem Resilience**: To prevent `Filename too long` (`ENAMETOOLONG`) or `AccessDenied (os error 5)` on deep folder structures (e.g. nested `node_modules`), directory cleanup uses Windows verbatim paths (`\\?\`), automatically strips `FILE_ATTRIBUTE_READONLY` flags before deletion, and safely unlinks symlinks/junctions without recursing into target trees.
+
+---
+
+### 3. Technologies Used
 - **Backend**: Rust 1.97+, Tauri v2 (`tauri::tray::TrayIconBuilder`, `tauri-plugin-positioner`, `tauri-plugin-global-shortcut`).
 - **Frontend**: Svelte 5, TypeScript, Tailwind CSS, Lucide Icons.
 - **Protocols & OS Integration**: Git Porcelain Protocol (`git worktree list --porcelain`), GitHub CLI (`gh`), Windows Win32 API (`CREATE_NO_WINDOW`).
 
 ---
 
-### 3. Key Learnings
+### 4. Key Learnings & Architectural Decisions
 - **Subprocess Ergonomics in Windows**: Avoiding flashing terminal prompts when executing background developer CLIs requires low-level process creation flags (`CREATE_NO_WINDOW = 0x08000000`).
 - **IDE vs. CLI Disambiguation**: Differentiating between GUI desktop applications (e.g. `Antigravity.exe`) and command-line companion utilities (`agy.exe`) ensures predictable workspace launching.
 - **Resilient Configuration Migration**: Using `#[serde(default)]` in Rust and nullish coalescing in TypeScript guarantees zero data loss and prevents deserialization crashes when extending configuration schemas.
 - **Safety Guardrails in Tooling**: Automating `git worktree remove` demands pre-flight dirty checks (`git status --porcelain`) before triggering destructive actions.
-- **Repo-Wide Context Caching & Delta-Patch Updates**: Computing orphan-detection facts (default branch, `branch -vv`, `branch --merged`) once per repository instead of once per worktree cuts subprocess spawns roughly 5x on multi-worktree repos; patching the in-memory worktree list after a single mutation — instead of re-scanning every watched folder — keeps the UI from flashing empty and avoids paying that cost for a one-worktree change.
+- **Repo-Wide Context Caching & Delta-Patch Updates**: Computing orphan-detection facts (default branch, `branch -vv`, `branch --merged`) once per repository instead of once per worktree cuts subprocess spawns roughly 5x on multi-worktree repos ([see benchmark](docs/benchmarks/context-caching-benchmark.md)); patching the in-memory worktree list after a single mutation keeps the UI from flashing empty.
 - **Atomic Bulk Cleanup & Git Lock Isolation**: Chaining destructive Git commands across multiple repositories requires strictly bounded concurrency: parallelizing across distinct repositories via Rayon (`par_iter`) while strictly sequencing steps within each repository prevents `.git/index.lock` collisions and Windows OS file lock conflicts.
 
 ---
 
-### 4. Local Setup Instructions
+### 5. Local Setup Instructions
 
 #### Prerequisites
 - [Node.js](https://nodejs.org/) (v20+ recommended) & `npm`
@@ -82,21 +107,31 @@ npx tauri dev
 npm run dev
 ```
 
-#### Run Tests
+#### Automated Testing & Verification
+Workspace Companion maintains a comprehensive automated test pyramid across both backend Rust services and frontend Svelte components:
+
 ```powershell
-# Run backend Rust tests
+# Run backend Rust test suite (Unit, Integration & Benchmarks)
 cd src-tauri; cargo test; cd ..
 
-# Check frontend types and build
+# Run reproducible context caching benchmark (~5x subprocess reduction)
+cd src-tauri; cargo test --test context_caching_benchmark -- --nocapture; cd ..
+
+# Check frontend types and production build
 npm run check
 npm run build
 ```
 
+**Quality Gates Automated in CI:**
+- 🛡️ **Disposable Git Repositories**: Real temporary repositories created via `tempfile` testing 9 orthogonal scenarios: clean/dirty worktrees, detached `HEAD`, remote-gone upstream branches, merged branches, protected/default branch guards, unpushed commit audits, locked worktrees (`git worktree lock`), long paths, and safe directory removal.
+- ⚡ **Zero Regressions & Bounded Concurrency**: 100% automated test pass rate with strict concurrency boundaries (Rayon `par_iter` across repos; strictly sequential within each repo to eliminate `.git/index.lock` collisions).
+
 ---
 
-### 5. Documentation & Architectural Decisions
+### 6. Documentation & Architectural Decisions
 - 🧭 [User Interface & Navigation Guide](docs/ui-guide.md)
 - 📖 [Technical Architecture & Design](docs/architecture.md)
+- 📊 [Benchmark: Subprocess Reduction & Context Caching](docs/benchmarks/context-caching-benchmark.md)
 - 🏛️ [Architectural Decision Records (ADRs)](docs/adr/)
   - [ADR 0001: Tauri v2 System Tray & Window Positioning](docs/adr/0001-tauri-v2-system-tray-and-window-positioning.md)
   - [ADR 0002: Windows Subprocess Creation Flag](docs/adr/0002-windows-subprocess-no-window-flag.md)
@@ -110,10 +145,6 @@ npm run build
 
 ---
 
-
----
-
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
-
