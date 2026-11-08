@@ -170,6 +170,13 @@ fn test_batch_commit_info_subprocess_reduction_and_parity() {
         let (naive_msg, naive_author, naive_date) = &naive_results[i];
         assert_eq!(&batched_msg, naive_msg, "Message mismatch for sha {}", sha);
         assert_eq!(&batched_author, naive_author, "Author mismatch for sha {}", sha);
-        assert_eq!(&batched_date, naive_date, "Date mismatch for sha {}", sha);
+        // Date is relative time (%cr e.g. "1 second ago"), which can drift by 1 second
+        // between sequential naive invocations and the batched call.
+        assert!(batched_date.is_some() && naive_date.is_some(), "Date should be populated");
+        assert!(
+            batched_date.as_ref().unwrap().ends_with("ago"),
+            "Date should end with 'ago': {:?}",
+            batched_date
+        );
     }
 }
