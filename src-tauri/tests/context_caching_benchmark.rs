@@ -125,3 +125,51 @@ fn test_context_caching_subprocess_reduction_and_latency_benchmark() {
     }
     println!("=========================================================================================\n");
 }
+
+#[test]
+fn test_batch_commit_info_subprocess_reduction_and_parity() {
+    let repo_temp = create_test_repo();
+    let repo_path = repo_temp.path();
+
+    // Create 5 commits on 5 branches
+    let mut shas = Vec::new();
+    for i in 1..=5 {
+        let branch = format!("feature/commit-batch-{:02}", i);
+        run_git(repo_path, &["checkout", "-b", &branch]).unwrap();
+        let file_name = format!("file_{}.txt", i);
+        std::fs::write(repo_path.join(&file_name), format!("content {}", i)).unwrap();
+        run_git(repo_path, &["add", &file_name]).unwrap();
+        let msg = format!("Commit message for feature {}", i);
+        run_git(repo_path, &["commit", "-m", &msg]).unwrap();
+        let head_out = run_git(repo_path, &["rev-parse", "HEAD"]).unwrap();
+        shas.push(head_out.trim().to_string());
+    }
+
+    // 1. Individual log -1 approach (naive: N subprocesses)
+    let sha_refs: Vec<&str> = shas.iter().map(|s| s.as_str()).collect();
+    let mut naive_results = Vec::new();
+    for &sha in &sha_refs {
+        let output = run_git(repo_path, &["log", "-1", "--format=%s|||%an|||%cr", sha]).unwrap();
+        let parts: Vec<&str> = output.trim().split("|||").collect();
+        let msg = parts.get(0).map(|s| s.to_string());
+        let author = parts.get(1).map(|s| s.to_string());
+        let date = parts.get(2).map(|s| s.to_string());
+        naive_results.push((msg, author, date));
+    }
+
+    // 2. Batched git show -s approach: 1 subprocess for all N commits
+    let batched_map = GitService::get_batch_commit_info(repo_path, &sha_refs);
+
+    // 3. Verify exact output parity (no divergence)
+    assert_eq!(batched_map.len(), 5);
+    for (i, &sha) in sha_refs.iter().enumerate() {
+        let (batched_msg, batched_author, batched_date) = batched_map
+            .get(sha)
+            .expect("SHA should be in batch map")
+            .clone();
+        let (naive_msg, naive_author, naive_date) = &naive_results[i];
+        assert_eq!(&batched_msg, naive_msg, "Message mismatch for sha {}", sha);
+        assert_eq!(&batched_author, naive_author, "Author mismatch for sha {}", sha);
+        assert_eq!(&batched_date, naive_date, "Date mismatch for sha {}", sha);
+    }
+}

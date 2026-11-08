@@ -248,12 +248,20 @@ impl WorktreeCleanerService {
         // once per worktree (see `RepoOrphanContext`).
         let orphan_context = GitService::build_repo_orphan_context(path);
 
+        // Batch query commit info for all worktrees in this repo at once from repo root
+        let head_shas: Vec<&str> = worktrees
+            .iter()
+            .map(|wt| wt.head.as_str())
+            .filter(|h| !h.is_empty())
+            .collect();
+        let commit_info_map = GitService::get_batch_commit_info(path, &head_shas);
+
         // Enrich each worktree with dirty status, orphan status, and commit info. With the
         // repo-wide git calls hoisted out above, the remaining per-worktree work is cheap enough
         // to parallelize across worktrees.
         worktrees
             .par_iter_mut()
-            .for_each(|wt| Self::enrich_worktree_info(wt, &orphan_context));
+            .for_each(|wt| Self::enrich_worktree_info_with_batch(wt, &orphan_context, Some(&commit_info_map)));
 
         Ok(Some(RepositoryWorktrees {
             repo_path: path.to_string_lossy().to_string(),
@@ -268,22 +276,39 @@ impl WorktreeCleanerService {
     /// Shared by the per-repo scan loop in `scan_repository` and by `build_single_worktree_info`,
     /// so both code paths compute a worktree's status the same way.
     fn enrich_worktree_info(worktree: &mut WorktreeEntry, orphan_context: &RepoOrphanContext) {
+        Self::enrich_worktree_info_with_batch(worktree, orphan_context, None);
+    }
+
+    fn enrich_worktree_info_with_batch(
+        worktree: &mut WorktreeEntry,
+        orphan_context: &RepoOrphanContext,
+        batch_commit_map: Option<&HashMap<String, (Option<String>, Option<String>, Option<String>)>>,
+    ) {
         let wt_path = Path::new(&worktree.path);
 
-        // Commit info
-        let (msg, author, date) = GitService::get_last_commit_info(wt_path);
-        worktree.last_commit_message = msg;
-        worktree.last_commit_author = author;
-        worktree.last_commit_date = date;
+        // Commit info: check batch map first, fallback to individual git log if missing
+        let commit_info = batch_commit_map
+            .and_then(|map| map.get(&worktree.head))
+            .cloned()
+            .unwrap_or_else(|| GitService::get_last_commit_info(wt_path));
 
-        // Dirty status
-        let (is_dirty, uncommitted_count) = GitService::check_dirty_status(wt_path);
-        worktree.is_dirty = is_dirty;
-        worktree.uncommitted_files_count = if is_dirty {
-            Some(uncommitted_count)
+        worktree.last_commit_message = commit_info.0;
+        worktree.last_commit_author = commit_info.1;
+        worktree.last_commit_date = commit_info.2;
+
+        // Dirty status: short-circuit if worktree is bare or directory does not exist on disk
+        if worktree.bare || !wt_path.exists() {
+            worktree.is_dirty = false;
+            worktree.uncommitted_files_count = None;
         } else {
-            None
-        };
+            let (is_dirty, uncommitted_count) = GitService::check_dirty_status(wt_path);
+            worktree.is_dirty = is_dirty;
+            worktree.uncommitted_files_count = if is_dirty {
+                Some(uncommitted_count)
+            } else {
+                None
+            };
+        }
 
         // Branch-level status, reported for every worktree including the main one — it describes
         // the branch, not the worktree, so the "never orphaned" rule below does not apply to it.

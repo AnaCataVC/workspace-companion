@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -360,14 +361,90 @@ impl GitService {
         }
     }
 
+    /// Fetches commit metadata (message, author, relative date) for multiple commit hashes
+    /// in a single Git subprocess invocation from the repository root.
+    pub fn get_batch_commit_info<P: AsRef<Path>>(
+        repo_root: P,
+        commit_shas: &[&str],
+    ) -> HashMap<String, (Option<String>, Option<String>, Option<String>)> {
+        let mut results = HashMap::new();
+        if commit_shas.is_empty() {
+            return results;
+        }
+
+        // Deduplicate and filter to valid hex hashes (at least 7 hex chars)
+        let mut unique_shas: Vec<&str> = commit_shas
+            .iter()
+            .copied()
+            .filter(|s| {
+                let trimmed = s.trim();
+                trimmed.len() >= 7 && trimmed.chars().all(|c| c.is_ascii_hexdigit())
+            })
+            .collect();
+        unique_shas.sort_unstable();
+        unique_shas.dedup();
+
+        if unique_shas.is_empty() {
+            return results;
+        }
+
+        // Format: %H|||%s|||%an|||%cr
+        let mut args = vec!["show", "-s", "--format=%H|||%s|||%an|||%cr"];
+        args.extend(unique_shas.iter().copied());
+
+        if let Ok(output) = Self::run_git(repo_root, &args) {
+            for line in output.lines() {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let parts: Vec<&str> = trimmed.split("|||").collect();
+                if let Some(hash) = parts.get(0) {
+                    let msg = parts.get(1).map(|s| s.to_string());
+                    let author = parts.get(2).map(|s| s.to_string());
+                    let date = parts.get(3).map(|s| s.to_string());
+                    results.insert(hash.to_string(), (msg, author, date));
+                }
+            }
+        }
+
+        results
+    }
+
     /// Computes the repo-wide state needed for orphan-status checks exactly once per repository.
     /// See `RepoOrphanContext` for why this must not be recomputed per worktree.
     pub fn build_repo_orphan_context<P: AsRef<Path>>(repo_root: P) -> RepoOrphanContext {
-        let default_branch =
-            Self::get_default_branch(&repo_root).unwrap_or_else(|| "main".to_string());
-        let branch_vv_output = Self::run_git(&repo_root, &["branch", "-vv"]).unwrap_or_default();
+        let repo_root_ref = repo_root.as_ref();
+        let branch_vv_output = Self::run_git(repo_root_ref, &["branch", "-vv"]).unwrap_or_default();
+
+        let default_branch = if let Ok(symbolic) =
+            Self::run_git(repo_root_ref, &["symbolic-ref", "refs/remotes/origin/HEAD"])
+        {
+            symbolic.trim().replace("refs/remotes/origin/", "")
+        } else {
+            // Deduce directly from branch_vv_output if possible, avoiding extra subprocesses
+            let mut found_main = false;
+            let mut found_master = false;
+            for line in branch_vv_output.lines() {
+                let trimmed = line.trim().trim_start_matches(['*', '+']).trim();
+                let branch_token = trimmed.split_whitespace().next().unwrap_or("");
+                if branch_token == "main" {
+                    found_main = true;
+                } else if branch_token == "master" {
+                    found_master = true;
+                }
+            }
+            if found_main {
+                "main".to_string()
+            } else if found_master {
+                "master".to_string()
+            } else {
+                Self::get_default_branch(repo_root_ref).unwrap_or_else(|| "main".to_string())
+            }
+        };
+
         let merged_branches_output =
-            Self::run_git(&repo_root, &["branch", "--merged", &default_branch]).unwrap_or_default();
+            Self::run_git(repo_root_ref, &["branch", "--merged", &default_branch]).unwrap_or_default();
 
         RepoOrphanContext {
             default_branch,
@@ -508,15 +585,23 @@ impl GitService {
     /// Identifies the default branch (main/master).
     pub fn get_default_branch<P: AsRef<Path>>(repo_root: P) -> Option<String> {
         if let Ok(symbolic) = Self::run_git(&repo_root, &["symbolic-ref", "refs/remotes/origin/HEAD"]) {
-            return Some(symbolic.replace("refs/remotes/origin/", ""));
+            return Some(symbolic.trim().replace("refs/remotes/origin/", ""));
         }
-        if let Ok(branches) = Self::run_git(&repo_root, &["branch", "--list", "main"]) {
-            if !branches.trim().is_empty() {
+        if let Ok(branches) = Self::run_git(&repo_root, &["branch", "--list", "main", "master"]) {
+            let mut has_main = false;
+            let mut has_master = false;
+            for line in branches.lines() {
+                let cleaned = line.trim().trim_start_matches(['*', '+']).trim();
+                if cleaned == "main" {
+                    has_main = true;
+                } else if cleaned == "master" {
+                    has_master = true;
+                }
+            }
+            if has_main {
                 return Some("main".to_string());
             }
-        }
-        if let Ok(branches) = Self::run_git(&repo_root, &["branch", "--list", "master"]) {
-            if !branches.trim().is_empty() {
+            if has_master {
                 return Some("master".to_string());
             }
         }
@@ -1377,6 +1462,59 @@ bare
             status_output.stdout.is_empty(),
             "Working tree must be completely clean after discard"
         );
+    }
+
+    #[test]
+    fn test_get_batch_commit_info() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path();
+
+        let run_cmd = |args: &[&str]| {
+            let mut cmd = std::process::Command::new("git");
+            cmd.args(args).current_dir(path);
+            #[cfg(target_os = "windows")]
+            cmd.creation_flags(CREATE_NO_WINDOW);
+            cmd.output().expect("git command failed")
+        };
+
+        run_cmd(&["init"]);
+        run_cmd(&["config", "user.name", "Test Author"]);
+        run_cmd(&["config", "user.email", "test@example.com"]);
+        run_cmd(&["config", "commit.gpgsign", "false"]);
+
+        std::fs::write(path.join("file1.txt"), "hello").unwrap();
+        run_cmd(&["add", "file1.txt"]);
+        run_cmd(&["commit", "-m", "First commit message"]);
+
+        let head1_out = run_cmd(&["rev-parse", "HEAD"]);
+        let sha1 = String::from_utf8_lossy(&head1_out.stdout).trim().to_string();
+
+        std::fs::write(path.join("file2.txt"), "world").unwrap();
+        run_cmd(&["add", "file2.txt"]);
+        run_cmd(&["commit", "-m", "Second commit message"]);
+
+        let head2_out = run_cmd(&["rev-parse", "HEAD"]);
+        let sha2 = String::from_utf8_lossy(&head2_out.stdout).trim().to_string();
+
+        // 1. Batch query with both SHAs + duplicate + empty/invalid string
+        let shas = [sha1.as_str(), sha2.as_str(), sha1.as_str(), "", "nonexistent"];
+        let batch_map = GitService::get_batch_commit_info(path, &shas);
+
+        assert_eq!(batch_map.len(), 2);
+
+        let info1 = batch_map.get(&sha1).expect("sha1 should be present");
+        assert_eq!(info1.0.as_deref(), Some("First commit message"));
+        assert_eq!(info1.1.as_deref(), Some("Test Author"));
+        assert!(info1.2.is_some());
+
+        let info2 = batch_map.get(&sha2).expect("sha2 should be present");
+        assert_eq!(info2.0.as_deref(), Some("Second commit message"));
+        assert_eq!(info2.1.as_deref(), Some("Test Author"));
+        assert!(info2.2.is_some());
+
+        // 2. Batch query with empty list returns empty map safely
+        let empty_map = GitService::get_batch_commit_info(path, &[]);
+        assert!(empty_map.is_empty());
     }
 }
 
