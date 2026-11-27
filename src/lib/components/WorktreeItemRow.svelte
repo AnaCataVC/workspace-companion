@@ -106,9 +106,9 @@
   class="group relative flex items-center justify-between px-2.5 py-1.5 rounded-md border transition-all text-xs
     {isHighlighted ? 'ring-2 ring-indigo-500/70' : isKeyboardFocused ? 'ring-1 ring-indigo-500/70 border-indigo-600/70' : ''}
     {isSelected
-      ? 'bg-rose-950/30 border-rose-800/60 shadow-xs'
+      ? 'bg-rose-950/30 border-rose-800/60 shadow-sm'
       : worktree.isMain
-      ? 'bg-indigo-950/20 hover:bg-indigo-950/35 border-indigo-900/40 hover:border-indigo-800/60 shadow-xs'
+      ? 'bg-indigo-950/20 hover:bg-indigo-950/35 border-indigo-900/40 hover:border-indigo-800/60 shadow-sm'
       : 'bg-neutral-900/60 hover:bg-neutral-850/90 border-neutral-800/60 hover:border-neutral-700/80'}"
 >
   <!-- Left Side: Hierarchy Connector + Selection Checkbox + Branch / Name / Badges -->
@@ -183,7 +183,7 @@
           uncommittedCount={worktree.uncommittedFilesCount ?? 0}
           worktreePath={worktree.path}
           label={worktree.uncommittedFilesCount ? `${worktree.uncommittedFilesCount} dirty` : 'dirty'}
-          badgeClass="px-1.5 py-0.5 rounded-full bg-rose-950/80 text-rose-300 border border-rose-800/60 text-[11px] font-sans flex items-center gap-0.5 cursor-pointer shadow-2xs"
+          badgeClass="px-1.5 py-0.5 rounded-full bg-rose-950/80 text-rose-300 border border-rose-800/60 text-[11px] font-sans flex items-center gap-0.5 cursor-pointer shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/60"
           iconSize={9}
           popoverPositionClass="left-0 bottom-full mb-1.5"
         />
@@ -217,12 +217,6 @@
         >
           <AlertTriangle size={9} />
           Orphan
-        </span>
-      {/if}
-
-      {#if worktree.locked}
-        <span title={`Locked: ${worktree.locked}`} class="text-neutral-400">
-          <Lock size={10} />
         </span>
       {/if}
     </div>

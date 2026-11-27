@@ -177,7 +177,7 @@
 {#if isOpen && worktree}
   <div
     use:autofocus
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
     role="dialog"
     aria-modal="true"
   >
@@ -228,7 +228,7 @@
               type="button"
               disabled={isResolvingDirty || isSwitching}
               on:click={handleStash}
-              class="px-2.5 py-1 rounded-md bg-indigo-900/80 hover:bg-indigo-800 border border-indigo-700/60 text-indigo-100 font-medium text-[11px] flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50"
+              class="px-2.5 py-1 rounded-md bg-indigo-900/80 hover:bg-indigo-800 border border-indigo-700/60 text-indigo-100 font-medium text-[11px] flex items-center gap-1.5 transition-all shadow-sm cursor-pointer disabled:opacity-50"
               title="Save changes to Git stash (git stash push -u) and unlock branch selection"
             >
               {#if isStashing}
@@ -307,7 +307,7 @@
           data-autofocus
           aria-label="Filter branches"
           placeholder="Filter branches (e.g. main, feat/login)..."
-          class="w-full bg-neutral-950 border border-neutral-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-mono"
+          class="w-full bg-neutral-950 border border-neutral-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-mono"
         />
       </div>
 
@@ -352,7 +352,7 @@
                       {branch.shortName}
                     </span>
                     {#if branch.isRemote}
-                      <span class="text-[11px] font-sans px-1 py-0.2 rounded bg-neutral-800 text-neutral-400">
+                      <span class="text-[11px] font-sans px-1 py-0.5 rounded bg-neutral-800 text-neutral-400">
                         remote
                       </span>
                     {/if}

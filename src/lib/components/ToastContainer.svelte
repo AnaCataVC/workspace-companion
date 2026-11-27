@@ -6,7 +6,7 @@
 <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none select-none px-3">
   {#each $notifications as notif (notif.id)}
     <div
-      class="pointer-events-auto flex items-start gap-2.5 p-3 rounded-xl shadow-2xl border backdrop-blur-md transition-all duration-200 animate-in slide-in-from-bottom-3 fade-in
+      class="pointer-events-auto flex items-start gap-2.5 p-3 rounded-xl shadow-2xl border backdrop-blur-md transition-all duration-200
         {notif.type === 'error'
           ? 'bg-neutral-900/95 border-rose-800/80 text-rose-200'
           : notif.type === 'success'

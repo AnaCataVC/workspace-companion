@@ -72,7 +72,7 @@
 
 {#if isOpen}
   <div
-    use:autofocus class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-100 select-none">
+    use:autofocus class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm select-none">
     <div class="w-full max-w-md bg-neutral-900 border border-neutral-800 rounded-xl p-4 shadow-2xl flex flex-col gap-3 max-h-[85vh]">
       <!-- Header -->
       <div class="flex items-center justify-between border-b border-neutral-800 pb-2">
@@ -161,12 +161,12 @@
 
                 <div class="flex items-center gap-1 flex-shrink-0">
                   {#if t.isMerged}
-                    <span class="px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[11px] flex items-center gap-0.5">
+                    <span class="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[11px] flex items-center gap-0.5">
                       <GitMerge size={9} />
                       merged
                     </span>
                   {:else}
-                    <span class="px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-800 text-[11px]">
+                    <span class="px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800 text-[11px]">
                       unmerged
                     </span>
                   {/if}
@@ -222,7 +222,7 @@
                   autocomplete="off"
                   spellcheck="false"
                   placeholder={FORCE_KEYWORD}
-                  class="w-full bg-neutral-950 border border-rose-800/70 rounded px-2 py-1 text-[11px] font-mono text-rose-100 placeholder-rose-900 focus:outline-hidden focus:border-rose-500 focus:ring-1 focus:ring-rose-500/40"
+                  class="w-full bg-neutral-950 border border-rose-800/70 rounded px-2 py-1 text-[11px] font-mono text-rose-100 placeholder-rose-900 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500/40"
                 />
               </div>
             {/if}

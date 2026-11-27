@@ -39,7 +39,7 @@
 
 <div class="group relative rounded-lg border p-2.5 transition-all text-xs flex flex-col gap-1.5 shadow-sm
   {isSelected
-    ? 'bg-rose-950/30 border-rose-800/70 shadow-xs'
+    ? 'bg-rose-950/30 border-rose-800/70 shadow-sm'
     : isProtected
     ? 'bg-neutral-900/40 border-neutral-850/70'
     : 'bg-neutral-900/90 hover:bg-neutral-850 border-neutral-800/80 hover:border-neutral-700'}">
@@ -117,7 +117,7 @@
         type="button"
         on:click={() => dispatch('requestRelease', branch)}
         title="Free this branch from its worktree and delete it"
-        class="px-2.5 py-1 rounded bg-amber-950/40 hover:bg-amber-900/60 border border-amber-800/60 hover:border-amber-700 text-amber-200 hover:text-amber-100 flex items-center gap-1.5 transition-colors text-[11px] font-medium cursor-pointer shadow-xs"
+        class="px-2.5 py-1 rounded bg-amber-950/40 hover:bg-amber-900/60 border border-amber-800/60 hover:border-amber-700 text-amber-200 hover:text-amber-100 flex items-center gap-1.5 transition-colors text-[11px] font-medium cursor-pointer shadow-sm"
       >
         <Unlock size={12} />
         <span>Release / Delete...</span>

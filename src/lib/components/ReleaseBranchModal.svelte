@@ -173,7 +173,7 @@
 {#if isOpen && branch}
   <div
     use:autofocus
-    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-100"
+    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
     role="dialog"
     aria-modal="true"
   >
@@ -252,7 +252,7 @@
             autocomplete="off"
             spellcheck="false"
             placeholder={FORCE_KEYWORD}
-            class="w-full bg-neutral-950 border border-rose-800/70 rounded px-2 py-1 text-[11px] font-mono text-rose-100 placeholder-rose-900 focus:outline-hidden focus:border-rose-500 focus:ring-1 focus:ring-rose-500/40"
+            class="w-full bg-neutral-950 border border-rose-800/70 rounded px-2 py-1 text-[11px] font-mono text-rose-100 placeholder-rose-900 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500/40"
           />
         </div>
       {:else}

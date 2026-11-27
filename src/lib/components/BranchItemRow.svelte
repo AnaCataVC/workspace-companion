@@ -36,7 +36,7 @@
   role="group"
   class="group flex items-center justify-between px-2.5 py-1.5 rounded-md border transition-all text-xs
     {isSelected
-      ? 'bg-rose-950/30 border-rose-800/60 shadow-xs'
+      ? 'bg-rose-950/30 border-rose-800/60 shadow-sm'
       : isProtected
       ? 'bg-neutral-900/30 border-neutral-850/60'
       : 'bg-neutral-900/60 hover:bg-neutral-850/90 border-neutral-800/60 hover:border-neutral-700/80'}"

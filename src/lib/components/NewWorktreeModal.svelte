@@ -185,7 +185,7 @@
 {#if isOpen}
   <div
     use:autofocus
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
     role="dialog"
     aria-modal="true"
   >
@@ -234,7 +234,7 @@
           id="new-wt-repo-select"
           bind:value={selectedRepoPath}
           disabled={isCreating}
-          class="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs text-neutral-200 focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+          class="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs text-neutral-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
         >
           {#each repositories as repo (repo.repoPath)}
             <option value={repo.repoPath}>{repo.repoName} ({repo.repoPath})</option>
@@ -243,20 +243,20 @@
       </div>
 
       <!-- Mode Selector Tabs -->
-      <div class="flex rounded-lg bg-neutral-950 p-1 border border-neutral-800 text-xs">
+      <div class="flex rounded-lg bg-neutral-950 p-1 border border-neutral-800 text-xs gap-1">
         <button
           type="button"
           on:click={() => (mode = 'new')}
-          class="flex-1 py-1 rounded-md font-medium transition-all flex items-center justify-center gap-1.5 {mode === 'new' ? 'bg-indigo-600 text-white shadow-xs' : 'text-neutral-400 hover:text-neutral-200'}"
+          class="flex-1 py-1 rounded-md font-medium transition-all flex items-center justify-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 {mode === 'new' ? 'bg-neutral-800 text-neutral-100 border border-neutral-700 shadow-sm' : 'text-neutral-400 hover:text-neutral-200 border border-transparent'}"
         >
-          <Sparkles size={12} /> New Branch
+          <Sparkles size={12} class={mode === 'new' ? 'text-indigo-400' : ''} /> New Branch
         </button>
         <button
           type="button"
           on:click={() => (mode = 'existing')}
-          class="flex-1 py-1 rounded-md font-medium transition-all flex items-center justify-center gap-1.5 {mode === 'existing' ? 'bg-indigo-600 text-white shadow-xs' : 'text-neutral-400 hover:text-neutral-200'}"
+          class="flex-1 py-1 rounded-md font-medium transition-all flex items-center justify-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 {mode === 'existing' ? 'bg-neutral-800 text-neutral-100 border border-neutral-700 shadow-sm' : 'text-neutral-400 hover:text-neutral-200 border border-transparent'}"
         >
-          <GitBranch size={12} /> Existing Branch
+          <GitBranch size={12} class={mode === 'existing' ? 'text-indigo-400' : ''} /> Existing Branch
         </button>
       </div>
 
@@ -273,7 +273,7 @@
               bind:value={newBranchName}
               data-autofocus
               placeholder="e.g. feat/dashboard-redesign"
-              class="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 font-mono focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+              class="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
             />
           </div>
 
@@ -285,7 +285,7 @@
               id="new-wt-base-branch"
               bind:value={baseBranch}
               disabled={isCreating || isLoadingBranches}
-              class="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs text-neutral-200 font-mono focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+              class="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs text-neutral-200 font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
             >
               {#each availableBranches as b (b.name)}
                 <option value={b.shortName}>{b.shortName} {b.isRemote ? '(remote)' : ''}</option>
@@ -303,7 +303,7 @@
             id="new-wt-existing-branch"
             bind:value={existingBranch}
             disabled={isCreating || isLoadingBranches}
-            class="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs text-neutral-200 font-mono focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            class="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs text-neutral-200 font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
           >
             {#each availableBranches.filter(b => !b.isCurrent && !b.isLockedByOther) as b (b.name)}
               <option value={b.shortName}>{b.shortName} {b.isRemote ? '(remote)' : ''}</option>
@@ -339,7 +339,7 @@
           bind:value={targetPath}
           on:input={() => (isPathEdited = true)}
           placeholder="C:\Users\...\Repos\project-feature"
-          class="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs text-neutral-200 font-mono focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+          class="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs text-neutral-200 font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
         />
         {#if isPathColliding}
           <p class="text-[11px] text-amber-400 flex items-center gap-1">

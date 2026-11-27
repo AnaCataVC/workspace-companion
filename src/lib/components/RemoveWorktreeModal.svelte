@@ -60,7 +60,7 @@
 
 {#if isOpen && worktree}
   <div
-    use:autofocus class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-100">
+    use:autofocus class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
     <div class="w-full max-w-sm bg-neutral-900 border border-neutral-800 rounded-xl p-4 shadow-2xl flex flex-col gap-3">
       <!-- Modal Header -->
       <div class="flex items-center justify-between">
@@ -152,7 +152,7 @@
               autocomplete="off"
               spellcheck="false"
               placeholder={FORCE_KEYWORD}
-              class="w-full bg-neutral-950 border border-rose-800/70 rounded px-2 py-1 text-[11px] font-mono text-rose-100 placeholder-rose-900 focus:outline-hidden focus:border-rose-500 focus:ring-1 focus:ring-rose-500/40"
+              class="w-full bg-neutral-950 border border-rose-800/70 rounded px-2 py-1 text-[11px] font-mono text-rose-100 placeholder-rose-900 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500/40"
             />
           </div>
         {/if}

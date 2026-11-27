@@ -99,7 +99,7 @@
 {#if isOpen}
   <div
     use:autofocus
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
     role="dialog"
     aria-modal="true"
   >
@@ -162,7 +162,7 @@
                     type="text"
                     bind:value={folder.path}
                     placeholder="e.g. C:\Users\username\Repos or ~/Projects"
-                    class="w-full bg-neutral-900 border border-neutral-800 rounded-md pl-7 pr-2.5 py-1 text-xs text-neutral-200 placeholder-neutral-600 font-mono focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                    class="w-full bg-neutral-900 border border-neutral-800 rounded-md pl-7 pr-2.5 py-1 text-xs text-neutral-200 placeholder-neutral-600 font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
                   />
                 </div>
 
@@ -184,7 +184,7 @@
                   <span class="text-neutral-400 flex-shrink-0">Account:</span>
                   <select
                     bind:value={folder.accountUsername}
-                    class="bg-neutral-900 border border-neutral-800 rounded px-2 py-0.5 text-[11px] text-neutral-200 font-mono focus:outline-hidden focus:border-indigo-500"
+                    class="bg-neutral-900 border border-neutral-800 rounded px-2 py-0.5 text-[11px] text-neutral-200 font-mono focus:outline-none focus:border-indigo-500"
                   >
                     <option value={null}>None / Unassigned</option>
                     {#each ghAccounts as acc (acc.username)}
@@ -197,15 +197,15 @@
                 <div class="flex items-center gap-1.5 flex-shrink-0">
                   <Layers size={12} class="text-neutral-400 flex-shrink-0" />
                   <span class="text-neutral-400 flex-shrink-0">Depth:</span>
-                  <div class="flex rounded bg-neutral-900 border border-neutral-800 p-0.5">
+                  <div class="flex rounded bg-neutral-900 border border-neutral-800 p-0.5 gap-0.5">
                     {#each [1, 2, 3, 4, 5] as depth}
                       <button
                         type="button"
                         on:click={() => (folder.maxDepth = depth)}
-                        class="px-1.5 py-0.2 text-[11px] font-mono rounded transition-all
+                        class="px-1.5 py-0.5 text-[11px] font-mono rounded transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60
                           {folder.maxDepth === depth
-                            ? 'bg-indigo-600 text-white font-medium shadow-2xs'
-                            : 'text-neutral-400 hover:text-neutral-200'}"
+                            ? 'bg-indigo-950/90 text-indigo-200 border border-indigo-700/70 font-medium shadow-sm'
+                            : 'text-neutral-400 hover:text-neutral-200 border border-transparent'}"
                         title={`Scan up to ${depth} folder level(s) deep`}
                       >
                         {depth}
@@ -237,7 +237,7 @@
           </div>
           <select
             bind:value={localDefaultEditor}
-            class="bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-xs text-neutral-200 focus:outline-hidden focus:border-indigo-500"
+            class="bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-xs text-neutral-200 focus:outline-none focus:border-indigo-500"
           >
             {#each $installedEditors as editor (editor.id)}
               <option value={editor.id} disabled={!editor.isAvailable}>
@@ -255,7 +255,7 @@
           </div>
           <select
             bind:value={localDefaultTerminal}
-            class="bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-xs text-neutral-200 focus:outline-hidden focus:border-indigo-500"
+            class="bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-xs text-neutral-200 focus:outline-none focus:border-indigo-500"
           >
             {#each $installedTerminals as terminal (terminal.id)}
               <option value={terminal.id} disabled={!terminal.isAvailable}>
@@ -270,7 +270,7 @@
           <input
             type="checkbox"
             bind:checked={localShowTerminalButton}
-            class="rounded bg-neutral-950 border-neutral-700 text-indigo-600 focus:ring-0 focus:outline-hidden"
+            class="rounded bg-neutral-950 border-neutral-700 text-indigo-600 focus:ring-0 focus:outline-none"
           />
           <div class="flex flex-col">
             <span class="text-[11px] font-medium text-neutral-300">
@@ -287,7 +287,7 @@
           <input
             type="checkbox"
             bind:checked={localAutoSwitch}
-            class="rounded bg-neutral-950 border-neutral-700 text-indigo-600 focus:ring-0 focus:outline-hidden"
+            class="rounded bg-neutral-950 border-neutral-700 text-indigo-600 focus:ring-0 focus:outline-none"
           />
           <div class="flex flex-col">
             <span class="text-[11px] font-medium text-neutral-300">

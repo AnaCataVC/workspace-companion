@@ -150,7 +150,7 @@
 
       {#if suggestedPath && !isCreating}
         <span
-          class="text-[11px] text-indigo-300 font-mono hidden md:inline-block bg-indigo-950/70 border border-indigo-800/50 px-1.5 py-0.2 rounded truncate max-w-[220px]"
+          class="text-[11px] text-indigo-300 font-mono hidden md:inline-block bg-indigo-950/70 border border-indigo-800/50 px-1.5 py-0.5 rounded truncate max-w-[220px]"
           title={`New branch from ${defaultBranch}, created at ${suggestedPath}`}
         >
           from {defaultBranch} → {getDirectoryName(suggestedPath)}

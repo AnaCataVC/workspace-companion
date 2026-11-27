@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Flame } from 'lucide-svelte';
+  import { CircleDot } from 'lucide-svelte';
   import type { WorktreeDiffSummary } from '../types';
   import { invokeTauri } from '../utils/ipc';
   import { toErrorMessage } from '../utils/errors';
@@ -83,7 +83,7 @@
       }
     }}
   >
-    <Flame size={iconSize} class="text-rose-400 animate-pulse" />
+    <CircleDot size={iconSize} class="text-rose-400" />
     {label}
   </button>
 

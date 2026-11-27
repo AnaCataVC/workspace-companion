@@ -12,7 +12,11 @@ export default {
         surface: 'var(--surface)',
         border: 'var(--border)',
         accent: 'var(--accent)',
-      }
+        neutral: {
+          750: '#333338',
+          850: '#1f1f23',
+        },
+      },
     },
   },
   plugins: [],

@@ -28,7 +28,7 @@
 
 {#if isOpen}
   <div
-    use:autofocus class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-100">
+    use:autofocus class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
     <div class="w-full max-w-sm bg-neutral-900 border border-neutral-800 rounded-xl p-4 shadow-2xl flex flex-col gap-3">
       <!-- Modal Header -->
       <div class="flex items-center justify-between">

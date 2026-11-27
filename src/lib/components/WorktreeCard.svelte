@@ -103,7 +103,7 @@
   class="group relative rounded-lg border p-2.5 transition-all text-xs flex flex-col gap-1.5 shadow-sm
   {isHighlighted ? 'ring-2 ring-indigo-500/70' : isKeyboardFocused ? 'ring-1 ring-indigo-500/70 border-indigo-600/70' : ''}
   {isSelected
-    ? 'bg-rose-950/30 border-rose-800/70 shadow-xs'
+    ? 'bg-rose-950/30 border-rose-800/70 shadow-sm'
     : 'bg-neutral-900/90 hover:bg-neutral-850 border-neutral-800/80 hover:border-neutral-700'}">
   <div class="flex items-center justify-between">
     <!-- Branch name & interactive switcher button -->
@@ -126,7 +126,7 @@
         type="button"
         on:click={() => dispatch('requestSwitchBranch', { worktree, repoPath })}
         title="Click to switch or checkout branch in this worktree"
-        class="flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-neutral-800/80 hover:bg-indigo-950/80 border border-neutral-700/50 hover:border-indigo-700/60 text-neutral-200 hover:text-indigo-300 transition-all text-left group/branch max-w-[210px]"
+        class="flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-neutral-800/80 hover:bg-indigo-950/80 border border-neutral-700/50 hover:border-indigo-700/60 text-neutral-200 hover:text-indigo-300 transition-all text-left group/branch max-w-[210px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60"
       >
         <GitBranch size={12} class={worktree.isOrphaned ? 'text-amber-400' : 'text-indigo-400'} />
         <span class="font-mono font-medium truncate text-[11px]">
@@ -134,12 +134,6 @@
         </span>
         <ChevronDown size={10} class="text-neutral-400 group-hover/branch:text-indigo-400 transition-colors flex-shrink-0" />
       </button>
-
-      {#if worktree.locked}
-        <span title={`Locked: ${worktree.locked}`} class="text-neutral-400">
-          <Lock size={11} />
-        </span>
-      {/if}
     </div>
 
     <!-- Status Badges -->
@@ -189,7 +183,7 @@
         <DirtyDiffPopover
           worktreePath={worktree.path}
           label={worktree.uncommittedFilesCount ? `${worktree.uncommittedFilesCount} uncommitted` : 'Dirty'}
-          badgeClass="px-1.5 py-0.5 rounded bg-rose-950/70 text-rose-300 border border-rose-800/50 text-[11px] font-sans flex items-center gap-0.5 cursor-pointer"
+          badgeClass="px-1.5 py-0.5 rounded bg-rose-950/70 text-rose-300 border border-rose-800/50 text-[11px] font-sans flex items-center gap-0.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/60"
           iconSize={10}
           uncommittedCount={worktree.uncommittedFilesCount ?? 0}
           popoverPositionClass="right-0 top-full mt-1.5"

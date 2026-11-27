@@ -40,7 +40,7 @@
 <div
   class="relative flex items-center rounded {compact
     ? 'bg-neutral-850/90 border border-neutral-750/70'
-    : 'bg-neutral-800/80 border border-neutral-700/60 shadow-xs'}"
+    : 'bg-neutral-800/80 border border-neutral-700/60 shadow-sm'}"
 >
   <button
     type="button"
