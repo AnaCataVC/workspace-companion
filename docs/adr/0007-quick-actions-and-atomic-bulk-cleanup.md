@@ -19,26 +19,22 @@ Prior to this feature, cleaning up required individual discards, batch worktree 
 1. **Unified Atomic Service in Rust (`QuickActionsService`)**:
    - Rather than chaining IPC calls from the frontend, all bulk cleanup pipelines are executed server-side in Rust.
    - Concurrency is strictly bounded: **Rayon parallel iteration occurs only across distinct repositories (`par_iter`)**, while operations within a single repository run strictly sequentially.
-2. **Four Supported Presets**:
-   - `DiscardUncommitted`: `git reset --hard HEAD` and `git clean -ffd`. **Strictly forbids `-x`**, preserving `.env` and files in `.gitignore` intact.
-   - `NukeWorktrees`: Discards dirty changes in linked worktrees, executes `git worktree remove --force --force`, and runs `git worktree prune`. The main repository worktree is strictly protected.
-   - `CleanBranches`: Deletes all secondary local branches (`git branch -D`). The default branch is strictly immune (ADR 0006). Pre-flight audit inspects and warns about unpushed commits.
-   - `TotalFreshStart`: A sequential 5-phase pipeline:
-     1. Discard dirty changes in linked worktrees.
-     2. Remove all linked worktrees and prune.
-     3. Switch main repository worktree to default branch (`git checkout <default>`).
-     4. Discard uncommitted changes on main worktree.
-     5. Delete all secondary local branches.
-3. **Pre-flight Live Impact Audit (`compute_preview`)**:
-   - Before executing, the UI queries `get_quick_action_preview`, displaying affected counts of repositories, worktrees, dirty files, and branches. If any branch has unpushed commits, an amber/red warning is explicitly presented.
-4. **Armed Confirmation UI**:
-   - Presets 1-3 use a two-step armed confirmation button with a 3-second countdown.
-   - Preset 4 (`TotalFreshStart`) requires typing `"RESET"` to unlock execution.
+2. **Five Supported Presets (2-Zone Constructive vs. Destructive Partition)**:
+   - **Constructive Daily Sync (`SyncDefaultBranch`)**: Executes `git fetch --all --prune`, safely skips `checkout`/`pull` on dirty root worktrees or when `<default_branch>` is checked out in a linked secondary worktree (reporting safe skip warnings), switches clean root worktrees to `<default_branch>`, and advances via `git pull --ff-only`. Never discards files, deletes branches, or creates unexpected merge commits. When `auto_switch_account` is enabled, repositories are grouped by `associated_account` so `GhService::switch_account` runs sequentially per account group while Rayon parallelizes within each group, restoring the initial active account afterwards.
+   - **Destructive Cleanups**:
+     - `DiscardUncommitted`: `git reset --hard HEAD` and `git clean -ffd`. **Strictly forbids `-x`**, preserving `.env` and files in `.gitignore` intact.
+     - `NukeWorktrees`: Discards dirty changes in linked worktrees, executes `git worktree remove --force --force`, and runs `git worktree prune`. The main repository worktree is strictly protected.
+     - `CleanBranches`: Deletes secondary local branches (`git branch -D`). The default branch and checked-out branches are strictly immune (ADR 0006). Pre-flight audit inspects and warns about unpushed commits.
+     - `TotalFreshStart`: Sequential 5-phase wipe (discard linked worktrees, remove linked worktrees & prune, switch root worktree to default branch, discard uncommitted changes on root worktree, delete secondary local branches).
+3. **Three Target Scopes (`QuickActionScope`)**:
+   - `AllWatchedRepos`, `RepoList { repo_paths }` (automatic subset targeting active `@account`, status, or search filters), and `SingleRepo { repo_path }`.
+4. **Pre-flight Live Impact Audit (`compute_preview`) & Trigger Discipline**:
+   - Before executing, the UI queries `get_quick_action_preview`. Constructive `SyncDefaultBranch` executes in 1 click (both from the top toolbar `Sync main` button and the modal's top zone). Destructive presets disable execution when impact is zero (`Nothing to clean`), use a two-step armed button with a 3-second countdown for presets 1–3, and require typing `"RESET"` for `TotalFreshStart`.
 
 ## Consequences
 - **Positive**:
-  - Developers can reset and clean up cluttered worktrees with zero manual terminal juggling.
-  - Guaranteed protection of root repositories, default branches, and `.gitignore`d secrets.
+  - Developers can synchronize all or filtered repositories to `main`/`master` in 1 click without risking uncommitted work or cross-account `gh` credential collisions, and clean up cluttered worktrees without manual terminal juggling.
+  - Guaranteed protection of root repositories, default branches, dirty worktrees during sync, and `.gitignore`d secrets.
   - Complete elimination of Windows console flashing via `CREATE_NO_WINDOW = 0x08000000` and `Stdio::null()`.
 - **Negative**:
-  - Pre-flight preview computation adds a minor round-trip to compute dirty status and unpushed commits before showing the modal's armed trigger.
+  - Pre-flight preview computation adds a minor round-trip to compute dirty status, default-branch state, and unpushed commits before rendering modal metrics.

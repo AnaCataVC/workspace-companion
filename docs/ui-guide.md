@@ -90,70 +90,51 @@ When cleaning up multiple feature worktrees or stale AI agent worktrees:
 
 ## 5. Branch Cleaner Workflow
 
-Switch to **Branches** with the segmented `Worktrees | Branches` control in the top toolbar. Unlike
-the worktree list, this view lists **every local branch** across your managed repos — including
-branches that never had a worktree of their own, which is most of what piles up after a PR merges.
+Switch to **Branches** with the segmented `Worktrees | Branches` control in the top toolbar for cross-repository bulk cleanup, or expand the inline **`N local branches without worktree`** drawer inside any repository card in the **Worktrees** view to mount (`+ Worktree`) or delete individual unmounted branches in place.
 
-1. **Filter**: Use the status chips (`All` / `Merged` / `Remote gone` / `Protected`) to narrow the
-   list. Protected branches (the default branch, or any branch checked out in a worktree) show a
-   lock icon instead of a checkbox — they can never be selected for deletion, and their badge names
-   which of the two rules applies.
-2. **Select**: Click a branch's checkbox, click **`Select All`** on a repository's header, or click
-   **`Select all (N)`** in the filter bar to take every deletable branch matching the active filter
-   across all repositories at once.
-3. **Review & Confirm**: The floating bar shows the selected count. Clicking **`Delete Selected`**
-   opens a review dialog listing each branch as `merged` or `unmerged`.
-4. **Force unmerged branches (optional)**: Unmerged branches are skipped by default — Git itself
-   refuses to delete a branch that isn't merged. Check **"Force delete unmerged branches
-   permanently"** and type `FORCE` into the confirmation field to delete them anyway
-   (`git branch -D`).
-5. **Safety guarantee**: The default branch and any branch checked out in a worktree are never
-   deletable, even with force enabled — this is enforced on the backend, not just hidden in the UI.
-6. **Checkout**: Every branch row offers an action on the right. For a branch that already has a
-   worktree it jumps to that worktree and highlights it; for one that doesn't, it opens the New
-   Worktree dialog preloaded with that branch.
+1. **Filter**: Both **Worktrees** and **Branches** share the top `@account` filter pills (`All Accounts`, `@username`, `Unassigned`). In **Worktrees**, status chips include `All Worktrees`, `Off main` (repositories whose root worktree is not on `main`/`master`), `Dirty`, `Multi-WT`, `Orphans`, and `Clean`, plus `Reset` and `Collapse all / Expand all`. In **Branches**, status chips include `All Branches`, `Merged`, `Remote gone`, and `Protected`, dynamically reflecting active account and search filters.
+2. **Select**: Click a branch's checkbox, click **`Select All`** on a repository's header, or click **`Select all (N)`** in the filter bar to take every deletable branch matching the active filter across all repositories at once.
+3. **Review & Confirm**: The floating bar shows the selected count. Clicking **`Delete Selected`** opens a review dialog listing each branch as `merged` or `unmerged`.
+4. **Force unmerged branches (optional)**: Unmerged branches are skipped by default — check **"Force delete unmerged branches permanently"** and type `FORCE` to delete them anyway (`git branch -D`).
+5. **Safety guarantee**: The default branch and any branch checked out in a worktree are never deletable, even with force enabled — enforced server-side.
+6. **Checkout**: Every branch row offers an action on the right to jump to an existing worktree or preload the New Worktree dialog.
 
 ---
 
-## 6. Quick Actions & Bulk Cleanup (⚡)
+## 6. Quick Actions, Sync to Main & Bulk Cleanup (`Sync main` / `⚡`)
 
-Clicking the **Quick Actions** Zap icon (`⚡`) in the top toolbar opens the **Quick Actions & Bulk Cleanup Modal**, providing one-click automated maintenance across managed repositories without manual terminal intervention.
+Workspace Companion separates **constructive daily sync** from **destructive bulk cleanup**:
+
+- **1-Click Toolbar Sync (`Sync main` / `Sync filtered`)**: Clicking the emerald sync button in the top toolbar immediately runs `SyncDefaultBranch` across active filtered repositories (when any filter is active) or all watched repositories. Clean completions show a summary toast; repositories safely skipped due to uncommitted changes or branch locks open the detailed summary report.
+- **Quick Actions Modal (`⚡`)**: Opens the two-zone maintenance dialog.
 
 ### A. Scope Selector
-At the top of the modal, choose the target scope:
-- **All Watched Repositories**: Executes the action across all repositories discovered in configured watch folders in parallel.
-- **Single Repository**: Narrows the operation to a specific repository selected from the dropdown menu.
+Choose the target scope at the top of the modal:
+- **All Watched (`N`)**: Executes across all discovered repositories in configured watch folders.
+- **Filtered (`M`)**: Appears and auto-selects when any `@account`, status, or search filter is active on the dashboard.
+- **Single Repo**: Narrows the operation to one repository selected from the dropdown.
 
-### B. Action Presets
-Four bounded presets are available:
+### B. Zone 1 — Daily Sync & Maintenance (Constructive, 1-Click)
+- **Sync All to Main (`FolderSync`)**:
+  - Runs `git fetch --all --prune`, switches clean root worktrees to their default branch (`main`/`master`), and advances commits via `git pull --ff-only`.
+  - **Non-Destructive Guarantee**: Dirty root worktrees, default branches checked out in secondary worktrees, and diverged non-fast-forward branches are safely skipped and listed under warnings without touching local files.
+  - **Multi-Account CLI Grouping**: Sequentially switches `gh auth` per `@account` group when `autoSwitchAccount` is enabled, restoring your active CLI profile upon completion.
 
-1. **Discard Uncommitted Changes (`FileX2`)**:
-   - Reverts modified tracked files to `HEAD` (`git reset --hard HEAD`) and removes untracked files (`git clean -ffd`).
-   - **Zero Secrets Loss**: Strictly preserves `.gitignore`d files (such as `.env` and local secrets). Flag `-x` is forbidden.
-2. **Nuke Linked Worktrees (`Trash2`)**:
-   - Automatically discards uncommitted changes across linked worktrees and removes them (`git worktree remove --force --force`).
-   - Runs `git worktree prune`.
-   - **Root Protection**: The primary/main repository worktree is strictly protected and never deleted.
-3. **Clean Local Branches (`GitBranch`)**:
-   - Deletes secondary local branches (`git branch -D`).
-   - **Safety Invariant**: Strictly protects the repository default branch (`main`/`master`) and any branch currently checked out in an active worktree.
+### C. Zone 2 — Destructive Bulk Cleanup
+1. **Discard Changes (`FileX2`)**:
+   - Reverts modified tracked files (`git reset --hard HEAD`) and removes untracked files (`git clean -ffd`), strictly preserving `.gitignore`d secrets (`.env`).
+2. **Nuke Worktrees (`Trash2`)**:
+   - Discards uncommitted changes in linked worktrees, force-removes them (`git worktree remove --force --force`), and runs `git worktree prune`. Main root worktree remains immune.
+3. **Clean Branches (`GitBranch`)**:
+   - Deletes secondary local branches (`git branch -D`) not checked out in active worktrees; default branch remains immune.
 4. **Total Fresh Start (`Flame`)**:
-   - Comprehensive 5-phase sequential wipe:
-     1. Discard uncommitted changes on all linked worktrees.
-     2. Remove all linked worktrees and prune.
-     3. Switch the main repository worktree to its default branch.
-     4. Discard uncommitted changes on the main worktree.
-     5. Delete all secondary local branches.
-   - Leaves the repository in a pristine state matching the remote default branch.
+   - 5-phase nuclear reset: discards linked worktrees, removes & prunes linked worktrees, checks out default branch on root, cleans root modifications, and deletes secondary local branches.
 
-### C. Pre-Flight Impact Preview & Unpushed Warning
-Before executing, the modal queries an audit preview displaying:
-- Affected repositories, worktrees to remove/discard, dirty file counts, and branches to delete.
-- **Unpushed Commits Warning**: If any branch scheduled for deletion has commits not pushed to its upstream remote (`@{u}..HEAD`), an amber/red warning banner flags the exact number of unpushed commits and branches at risk.
-
-### D. Armed Confirmation Triggers
-- **Standard Presets (1–3)**: Uses a 2-step armed button with a 3-second safety countdown (`Arm Action` → `Confirm Execution (3s)`).
-- **Total Fresh Start (Preset 4)**: Requires explicitly typing `"RESET"` into a confirmation text field to unlock the red execution button.
+### D. Pre-Flight Impact Audit & Confirmation Triggers
+- Displays live counts (and expandable item lists) before execution, warning prominently if unpushed commits would be deleted.
+- **Sync All to Main**: Direct 1-click emerald button.
+- **Destructive Presets (1–3)**: Disabled (`Nothing to clean`) when impact is `0`; otherwise uses a 2-step armed button with a 3-second countdown.
+- **Total Fresh Start**: Requires typing `"RESET"` into the confirmation field.
 
 ---
 
