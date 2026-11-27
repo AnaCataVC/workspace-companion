@@ -1,5 +1,5 @@
 use crate::services::config::{AppConfig, ConfigService, WatchFolder};
-use crate::services::git::{GitService, RepoOrphanContext, WorktreeEntry};
+use crate::services::git::{BranchStatusEntry, GitService, RepoOrphanContext, WorktreeEntry};
 use crate::services::BatchItemErrorKind;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -34,6 +34,10 @@ pub struct RepositoryWorktrees {
     pub repo_name: String,
     pub associated_account: Option<String>,
     pub watch_folder_path: Option<String>,
+    #[serde(default)]
+    pub default_branch: Option<String>,
+    #[serde(default)]
+    pub local_branches: Vec<BranchStatusEntry>,
     pub worktrees: Vec<WorktreeEntry>,
 }
 
@@ -263,11 +267,17 @@ impl WorktreeCleanerService {
             .par_iter_mut()
             .for_each(|wt| Self::enrich_worktree_info_with_batch(wt, &orphan_context, Some(&commit_info_map)));
 
+        let local_branches =
+            GitService::list_local_branches_with_context(path, &orphan_context, &worktrees)
+                .unwrap_or_default();
+
         Ok(Some(RepositoryWorktrees {
             repo_path: path.to_string_lossy().to_string(),
             repo_name,
             associated_account,
             watch_folder_path,
+            default_branch: Some(orphan_context.default_branch),
+            local_branches,
             worktrees,
         }))
     }

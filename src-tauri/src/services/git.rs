@@ -515,22 +515,35 @@ impl GitService {
         repo_path: P,
     ) -> Result<Vec<BranchStatusEntry>, String> {
         let repo_root = repo_path.as_ref();
-        let repo_path_str = repo_root.to_string_lossy().to_string();
-
         let context = Self::build_repo_orphan_context(repo_root);
-
         let raw_wt = Self::run_git(repo_root, &["worktree", "list", "--porcelain"])?;
         let worktrees = Self::parse_worktree_porcelain(&raw_wt);
+        Self::list_local_branches_with_context(repo_root, &context, &worktrees)
+    }
+
+    /// Lists every local branch in a repository reusing an already-computed `RepoOrphanContext`
+    /// and parsed `worktrees` slice so `scan_repository` can populate repository-level branch
+    /// metadata at the cost of a single `git branch --list` call.
+    pub fn list_local_branches_with_context<P: AsRef<Path>>(
+        repo_path: P,
+        context: &RepoOrphanContext,
+        worktrees: &[WorktreeEntry],
+    ) -> Result<Vec<BranchStatusEntry>, String> {
+        let repo_root = repo_path.as_ref();
+        let repo_path_str = repo_root.to_string_lossy().to_string();
+
         let mut branch_to_worktree: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();
-        for wt in &worktrees {
+        for wt in worktrees {
             if let Some(b) = &wt.branch {
                 branch_to_worktree.insert(b.replace("refs/heads/", ""), wt.path.clone());
             }
         }
 
-        let current_branch =
-            Self::run_git(repo_root, &["rev-parse", "--abbrev-ref", "HEAD"]).ok();
+        let current_branch = worktrees
+            .first()
+            .and_then(|wt| wt.branch.as_ref().map(|b| b.replace("refs/heads/", "")))
+            .or_else(|| Self::run_git(repo_root, &["rev-parse", "--abbrev-ref", "HEAD"]).ok());
 
         let local_raw = Self::run_git(
             repo_root,
@@ -544,7 +557,7 @@ impl GitService {
             let sha = parts.get(1).map(|s| s.to_string());
             let msg = parts.get(2).map(|s| s.to_string());
 
-            let (is_merged, is_remote_gone) = Self::branch_status_flags(&name, &context);
+            let (is_merged, is_remote_gone) = Self::branch_status_flags(&name, context);
             let checked_out_worktree_path = branch_to_worktree.get(&name).cloned();
 
             entries.push(BranchStatusEntry {
@@ -609,6 +622,7 @@ impl GitService {
     }
 
     /// Resolves the direct executable path for standard IDEs on Windows.
+    #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
     pub fn resolve_gui_binary(id: &str) -> Option<PathBuf> {
         #[cfg(target_os = "windows")]
         {
@@ -817,6 +831,7 @@ impl GitService {
     }
 
     /// Launches the selected terminal or CLI targeting the given path.
+    #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
     pub fn open_in_terminal(terminal: &str, path: &str) -> Result<(), String> {
         let p = Path::new(path);
         if !p.exists() {
