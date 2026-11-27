@@ -605,3 +605,66 @@ fn test_locked_worktree_detection_and_safety() {
     assert!(remove_res.is_ok(), "Removal after unlock must succeed: {:?}", remove_res.err());
     assert!(!wt_path.exists(), "Worktree directory must be removed");
 }
+
+#[test]
+fn test_scan_repository_exposes_default_branch_and_local_branches() {
+    let repo_temp = create_test_repo();
+    let repo_path = repo_temp.path();
+    let repo_path_str = repo_path.to_str().unwrap();
+
+    // Create one linked worktree (`feat/active-wt`) and two unmounted local branches
+    let wt_temp = tempfile::tempdir().expect("failed to create wt dir");
+    let wt_path = wt_temp.path().join("wt-active");
+    GitService::create_worktree(
+        repo_path_str,
+        wt_path.to_str().unwrap(),
+        "main",
+        Some("feat/active-wt"),
+    )
+    .expect("create_worktree failed");
+
+    // Create an unmounted merged branch pointing at main
+    run_git(repo_path, &["branch", "chore/merged-stale"]).expect("create merged branch failed");
+
+    // Create an unmounted unmerged branch with a unique commit
+    run_git(repo_path, &["checkout", "-b", "feat/unmounted-wip"]).expect("checkout wip failed");
+    fs::write(repo_path.join("wip.txt"), "wip\n").expect("write wip failed");
+    run_git(repo_path, &["add", "wip.txt"]).expect("git add failed");
+    run_git(repo_path, &["commit", "-m", "WIP commit"]).expect("git commit failed");
+    run_git(repo_path, &["checkout", "main"]).expect("checkout main failed");
+
+    let scanned = WorktreeCleanerService::scan_repository(repo_path, Some("AnaCataVC".into()), None)
+        .expect("scan_repository should succeed")
+        .expect("repository should be detected");
+
+    assert_eq!(scanned.default_branch.as_deref(), Some("main"));
+    assert_eq!(scanned.associated_account.as_deref(), Some("AnaCataVC"));
+    assert_eq!(scanned.local_branches.len(), 4);
+
+    let main_entry = scanned.local_branches.iter().find(|b| b.name == "main").unwrap();
+    assert!(main_entry.is_default);
+    assert!(main_entry.is_checked_out);
+
+    let active_wt_entry = scanned
+        .local_branches
+        .iter()
+        .find(|b| b.name == "feat/active-wt")
+        .unwrap();
+    assert!(active_wt_entry.is_checked_out);
+
+    let merged_unmounted = scanned
+        .local_branches
+        .iter()
+        .find(|b| b.name == "chore/merged-stale")
+        .unwrap();
+    assert!(!merged_unmounted.is_checked_out);
+    assert!(merged_unmounted.is_merged);
+
+    let wip_unmounted = scanned
+        .local_branches
+        .iter()
+        .find(|b| b.name == "feat/unmounted-wip")
+        .unwrap();
+    assert!(!wip_unmounted.is_checked_out);
+    assert!(!wip_unmounted.is_merged);
+}
