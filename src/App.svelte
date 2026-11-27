@@ -17,15 +17,43 @@
   import ReleaseBranchModal from './lib/components/ReleaseBranchModal.svelte';
   import QuickActionsModal from './lib/components/QuickActionsModal.svelte';
   import ToastContainer from './lib/components/ToastContainer.svelte';
-  import { scannedRepos, filteredRepos, isScanning, isPinned, scanError, highlightedWorktreePath, searchFilter, openWorktreeActionCount, keyboardFocusedPath, navigableWorktrees } from './lib/stores/worktrees';
-  import { scannedBranches, isScanningBranches, branchScanError, branchSearchFilter } from './lib/stores/branchCleaner';
+  import {
+    scannedRepos,
+    filteredRepos,
+    isScanning,
+    isPinned,
+    scanError,
+    highlightedWorktreePath,
+    searchFilter,
+    openWorktreeActionCount,
+    keyboardFocusedPath,
+    navigableWorktrees,
+    hasActiveWorktreeFilters,
+    getRepoDefaultBranch
+  } from './lib/stores/worktrees';
+  import {
+    scannedBranches,
+    filteredBranches,
+    isScanningBranches,
+    branchScanError,
+    branchSearchFilter,
+    hasActiveBranchFilters
+  } from './lib/stores/branchCleaner';
   import { ghAccounts, activeGhAccount, isGhLoading } from './lib/stores/ghAuth';
   import { appConfig, selectedAccountFilter, selectedStatusFilter, viewDensity } from './lib/stores/appConfig';
   import { batchSelection, selectedWorktreeList } from './lib/stores/batchSelection';
   import { branchSelection, selectedBranchList } from './lib/stores/branchSelection';
   import { installedEditors } from './lib/stores/editors';
   import { notifications } from './lib/stores/notifications';
-  import { isQuickActionsModalOpen, openQuickActionsModal } from './lib/stores/quickActions';
+  import {
+    isQuickActionsModalOpen,
+    openQuickActionsModal,
+    runQuickAction,
+    isExecutingQuickAction,
+    activeQuickActionPreset,
+    quickActionScope,
+    resetQuickActionsState
+  } from './lib/stores/quickActions';
   import { invokeTauri } from './lib/utils/ipc';
   import { toErrorMessage } from './lib/utils/errors';
   import { isPathWithin, normalizePath } from './lib/utils/paths';
@@ -293,6 +321,56 @@
     }
   }
 
+  /** Keeps `repo.localBranches` checked-out flags in sync after in-memory worktree delta updates. */
+  function reconcileRepoLocalBranches(repo: RepositoryWorktrees): RepositoryWorktrees {
+    const existing = repo.localBranches ?? [];
+    const byBranch = new Map<string, string>();
+    for (const wt of repo.worktrees) {
+      if (wt.branch) {
+        byBranch.set(wt.branch.replace('refs/heads/', ''), wt.path);
+      }
+    }
+
+    const defaultBranch = getRepoDefaultBranch(repo);
+    const mainShort = repo.worktrees.find((w) => w.isMain)?.branch?.replace('refs/heads/', '') ?? null;
+
+    const updated = existing.map((b) => {
+      const wtPath = byBranch.get(b.name) ?? null;
+      return {
+        ...b,
+        isCurrent: mainShort === b.name,
+        isCheckedOut: Boolean(wtPath),
+        checkedOutWorktreePath: wtPath
+      };
+    });
+
+    const knownNames = new Set(updated.map((b) => b.name));
+    for (const wt of repo.worktrees) {
+      if (!wt.branch) continue;
+      const shortName = wt.branch.replace('refs/heads/', '');
+      if (!knownNames.has(shortName)) {
+        knownNames.add(shortName);
+        updated.push({
+          repoPath: repo.repoPath,
+          name: shortName,
+          isCurrent: mainShort === shortName,
+          isDefault: shortName === defaultBranch,
+          isMerged: Boolean(wt.isBranchMerged),
+          isRemoteGone: Boolean(wt.isBranchRemoteGone),
+          isCheckedOut: true,
+          checkedOutWorktreePath: wt.path,
+          lastCommitSha: wt.head ? wt.head.slice(0, 7) : null,
+          lastCommitMessage: wt.lastCommitMessage ?? null
+        });
+      }
+    }
+
+    return {
+      ...repo,
+      localBranches: updated
+    };
+  }
+
   async function handleConfirmSwitchBranch(event: CustomEvent<{ worktree: WorktreeInfo; targetBranch: string }>) {
     const { worktree, targetBranch } = event.detail;
     const repoPath = selectedRepoForBranchSwitch;
@@ -314,7 +392,10 @@
         scannedRepos.update((repos) =>
           repos.map((r) =>
             r.repoPath === repoPath
-              ? { ...r, worktrees: r.worktrees.map((w) => (w.path === worktree.path ? freshInfo : w)) }
+              ? reconcileRepoLocalBranches({
+                  ...r,
+                  worktrees: r.worktrees.map((w) => (w.path === worktree.path ? freshInfo : w))
+                })
               : r
           )
         );
@@ -336,7 +417,10 @@
     scannedRepos.update((repos) =>
       repos.map((r) =>
         r.repoPath === repoPath
-          ? { ...r, worktrees: r.worktrees.map((w) => (w.path === freshInfo.path ? freshInfo : w)) }
+          ? reconcileRepoLocalBranches({
+              ...r,
+              worktrees: r.worktrees.map((w) => (w.path === freshInfo.path ? freshInfo : w))
+            })
           : r
       )
     );
@@ -400,7 +484,11 @@
       if (res?.worktreeInfo) {
         const freshInfo = res.worktreeInfo;
         scannedRepos.update((repos) =>
-          repos.map((r) => (r.repoPath === repoPath ? { ...r, worktrees: [...r.worktrees, freshInfo] } : r))
+          repos.map((r) =>
+            r.repoPath === repoPath
+              ? reconcileRepoLocalBranches({ ...r, worktrees: [...r.worktrees, freshInfo] })
+              : r
+          )
         );
       } else {
         await refreshWorktrees();
@@ -436,7 +524,10 @@
         repos
           .map((r) =>
             r.repoPath === repoPath
-              ? { ...r, worktrees: r.worktrees.filter((w) => w.path !== worktree.path) }
+              ? reconcileRepoLocalBranches({
+                  ...r,
+                  worktrees: r.worktrees.filter((w) => w.path !== worktree.path)
+                })
               : r
           )
           .filter((r) => r.worktrees.length > 0)
@@ -472,10 +563,12 @@
         const deletedSet = new Set(summary.deletedPaths);
         scannedRepos.update((repos) =>
           repos
-            .map((repo) => ({
-              ...repo,
-              worktrees: repo.worktrees.filter((w) => !deletedSet.has(w.path))
-            }))
+            .map((repo) =>
+              reconcileRepoLocalBranches({
+                ...repo,
+                worktrees: repo.worktrees.filter((w) => !deletedSet.has(w.path))
+              })
+            )
             .filter((repo) => repo.worktrees.length > 0)
         );
 
@@ -510,7 +603,10 @@
       repos
         .map((r) =>
           r.repoPath === repoPath
-            ? { ...r, worktrees: r.worktrees.filter((w) => w.path !== worktreePath) }
+            ? reconcileRepoLocalBranches({
+                ...r,
+                worktrees: r.worktrees.filter((w) => w.path !== worktreePath)
+              })
             : r
         )
         .filter((r) => r.worktrees.length > 0)
@@ -554,11 +650,30 @@
     const { repoPath, worktreeInfo } = event.detail;
     if (worktreeInfo) {
       scannedRepos.update((repos) =>
-        repos.map((r) => (r.repoPath === repoPath ? { ...r, worktrees: [...r.worktrees, worktreeInfo] } : r))
+        repos.map((r) =>
+          r.repoPath === repoPath
+            ? reconcileRepoLocalBranches({ ...r, worktrees: [...r.worktrees, worktreeInfo] })
+            : r
+        )
       );
     } else {
       refreshWorktrees();
     }
+  }
+
+  function handleRepoBranchDeleted(event: CustomEvent<{ repoPath: string; branchName: string }>) {
+    const { repoPath, branchName } = event.detail;
+    scannedRepos.update((repos) =>
+      repos.map((r) =>
+        r.repoPath === repoPath
+          ? { ...r, localBranches: (r.localBranches ?? []).filter((b) => b.name !== branchName) }
+          : r
+      )
+    );
+    scannedBranches.update((existing) =>
+      existing.filter((b) => !(b.repoPath === repoPath && b.name === branchName))
+    );
+    branchSelection.prune(new Set($scannedBranches.map((b) => `${b.repoPath}::${b.name}`)));
   }
 
   // Branch Cleaner: scan / toggle view / batch delete
@@ -567,6 +682,12 @@
     if (paths.length === 0) {
       scannedBranches.set([]);
       return;
+    }
+
+    // Seed immediately from cached repository branch metadata while the fresh scan completes.
+    if ($scannedBranches.length === 0) {
+      const seeded = $scannedRepos.flatMap((r) => r.localBranches ?? []);
+      if (seeded.length > 0) scannedBranches.set(seeded);
     }
 
     isScanningBranches.set(true);
@@ -596,7 +717,6 @@
 
     // The branch is already checked out somewhere: there is nothing to check out, so the useful
     // action is taking the user to that worktree instead of creating a second one.
-    // Reset filters and query so the target worktree is guaranteed to be rendered in the view.
     if (branch.checkedOutWorktreePath) {
       searchFilter.set('');
       selectedStatusFilter.set('ALL');
@@ -635,7 +755,11 @@
         repos
           .map((r) =>
             r.repoPath === repoPath
-              ? { ...r, worktrees: r.worktrees.filter((w) => w.path !== deletedWorktreePath) }
+              ? reconcileRepoLocalBranches({
+                  ...r,
+                  localBranches: (r.localBranches ?? []).filter((b) => b.name !== branchName),
+                  worktrees: r.worktrees.filter((w) => w.path !== deletedWorktreePath)
+                })
               : r
           )
           .filter((r) => r.worktrees.length > 0)
@@ -645,14 +769,19 @@
       scannedRepos.update((repos) =>
         repos.map((r) =>
           r.repoPath === repoPath
-            ? { ...r, worktrees: r.worktrees.map((w) => (w.path === updatedWorktree.path ? updatedWorktree : w)) }
+            ? reconcileRepoLocalBranches({
+                ...r,
+                localBranches: (r.localBranches ?? []).filter((b) => b.name !== branchName),
+                worktrees: r.worktrees.map((w) => (w.path === updatedWorktree.path ? updatedWorktree : w))
+              })
             : r
         )
       );
       if (updatedWorktree.branch) {
+        const shortUpdated = updatedWorktree.branch.replace('refs/heads/', '');
         scannedBranches.update((branches) =>
           branches.map((b) =>
-            b.repoPath === repoPath && b.name === updatedWorktree.branch
+            b.repoPath === repoPath && b.name === shortUpdated
               ? { ...b, isCheckedOut: true, checkedOutWorktreePath: updatedWorktree.path }
               : b
           )
@@ -678,13 +807,18 @@
       const summary = await invokeTauri<BranchBatchDeleteSummary>('remove_branches_batch', { targets });
       branchBatchDeleteSummary = summary;
 
-      // `deletedBranches` is repo-qualified (see `DeletedBranchRef`), so it can be matched
-      // directly against `scannedBranches` without ambiguity even if the same branch name was
-      // targeted in more than one repo in this batch.
       const deletedKeys = new Set(summary.deletedBranches.map((d) => `${d.repoPath}::${d.branchName}`));
       if (deletedKeys.size > 0) {
         scannedBranches.update((existing) =>
           existing.filter((b) => !deletedKeys.has(`${b.repoPath}::${b.name}`))
+        );
+        scannedRepos.update((repos) =>
+          repos.map((r) => ({
+            ...r,
+            localBranches: (r.localBranches ?? []).filter(
+              (b) => !deletedKeys.has(`${r.repoPath}::${b.name}`)
+            )
+          }))
         );
       }
 
@@ -726,6 +860,58 @@
     }
   }
 
+  $: activeFilteredRepoPaths =
+    activeView === 'worktrees'
+      ? $hasActiveWorktreeFilters
+        ? Array.from(new Set($filteredRepos.map((r) => r.repoPath)))
+        : []
+      : $hasActiveBranchFilters
+      ? Array.from(new Set($filteredBranches.map((b) => b.repoPath)))
+      : [];
+
+  $: isFilterScopeNarrowed =
+    activeView === 'worktrees' ? $hasActiveWorktreeFilters : $hasActiveBranchFilters;
+
+  $: canSyncMain = isFilterScopeNarrowed
+    ? activeFilteredRepoPaths.length > 0
+    : $scannedRepos.length > 0;
+
+  let isHeaderSyncing: boolean = false;
+
+  async function handleSyncMainFromHeader() {
+    if (isHeaderSyncing || $isExecutingQuickAction || !canSyncMain) return;
+
+    isHeaderSyncing = true;
+    const scope = isFilterScopeNarrowed
+      ? { repoList: { repoPaths: activeFilteredRepoPaths } }
+      : ('allWatchedRepos' as const);
+
+    activeQuickActionPreset.set('syncDefaultBranch');
+    quickActionScope.set(scope);
+
+    try {
+      const result = await runQuickAction('syncDefaultBranch', scope);
+      await refreshWorktrees();
+      if (activeView === 'branches') {
+        await refreshBranches();
+      }
+      refreshGhAccounts();
+
+      if (result && result.success && result.warnings.length === 0 && result.errors.length === 0) {
+        resetQuickActionsState();
+        notifications.success(
+          'Synced to default branch',
+          `Fetched ${result.reposFetched}, switched ${result.reposSwitchedToDefault}, fast-forwarded ${result.reposPulled}, ${result.reposUpToDate} already up to date.`
+        );
+      } else {
+        // Surface safe skips or errors directly in the Quick Actions summary panel.
+        isQuickActionsModalOpen.set(true);
+      }
+    } finally {
+      isHeaderSyncing = false;
+    }
+  }
+
   // "Busy" keeps the panel visible on focus loss: blurring mid-modal or mid-action would hide the
   // dialog or the progress/result the user is waiting for.
   $: visibleWorktreePaths = new Set($filteredRepos.flatMap((r) => r.worktrees.map((w) => w.path)));
@@ -741,7 +927,15 @@
     isNewWorktreeOpen ||
     $isQuickActionsModalOpen;
   $: isActionRunning =
-    isDeletingWorktree || isBatchDeleting || isBranchBatchDeleting || isSavingConfig || isSwitchingBranch || isCreatingWorktree || $openWorktreeActionCount > 0;
+    isDeletingWorktree ||
+    isBatchDeleting ||
+    isBranchBatchDeleting ||
+    isSavingConfig ||
+    isSwitchingBranch ||
+    isCreatingWorktree ||
+    isHeaderSyncing ||
+    $isExecutingQuickAction ||
+    $openWorktreeActionCount > 0;
   $: syncPanelState($isPinned, isAnyModalOpen || isActionRunning);
 
   function syncPanelState(pinned: boolean, busy: boolean) {
@@ -877,12 +1071,19 @@
     bind:this={headerRef}
     {activeView}
     isRefreshing={activeView === 'worktrees' ? $isScanning : $isScanningBranches}
+    isSyncingMain={isHeaderSyncing || $isExecutingQuickAction}
+    hasFilteredScope={isFilterScopeNarrowed}
+    {canSyncMain}
     onRefresh={activeView === 'worktrees' ? refreshWorktrees : () => refreshBranches()}
+    onSyncMain={handleSyncMainFromHeader}
     onSetView={handleSetView}
     onOpenGhModal={() => (isGhModalOpen = true)}
     onOpenNewWorktreeModal={() => handleOpenNewWorktree()}
     onOpenSettingsModal={() => (isSettingsModalOpen = true)}
-    onOpenQuickActionsModal={() => openQuickActionsModal()}
+    onOpenQuickActionsModal={() =>
+      openQuickActionsModal({
+        filteredRepoPaths: isFilterScopeNarrowed ? activeFilteredRepoPaths : undefined
+      })}
     onTogglePin={handleTogglePin}
     onToggleDensity={handleToggleDensity}
   />
@@ -902,6 +1103,8 @@
       on:openTerminal={handleOpenTerminal}
       on:requestSwitchBranch={handleRequestSwitchBranch}
       on:newWorktreeForRepo={(e) => handleOpenNewWorktree(e.detail)}
+      on:createWorktreeFromBranch={handleRequestCheckoutBranch}
+      on:repoBranchDeleted={handleRepoBranchDeleted}
       on:switchGhAccount={(e) => handleSwitchGhAccount(e.detail)}
       on:openSettings={() => (isSettingsModalOpen = true)}
       on:requestDelete={handleRequestDelete}
@@ -1008,12 +1211,14 @@
 
   <QuickActionsModal
     isOpen={$isQuickActionsModalOpen}
+    filteredRepoPaths={isFilterScopeNarrowed ? activeFilteredRepoPaths : []}
     on:close={() => isQuickActionsModalOpen.set(false)}
     on:actionCompleted={() => {
       refreshWorktrees();
       if (activeView === 'branches') {
         refreshBranches();
       }
+      refreshGhAccounts();
     }}
   />
 

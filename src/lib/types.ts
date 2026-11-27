@@ -1,9 +1,10 @@
 export type ViewDensity = 'compact' | 'detailed';
 
-export type StatusFilterType = 'ALL' | 'DIRTY' | 'MULTI_WT' | 'ORPHANS' | 'CLEAN';
+export type StatusFilterType = 'ALL' | 'OFF_MAIN' | 'DIRTY' | 'MULTI_WT' | 'ORPHANS' | 'CLEAN';
 
 export interface StatusFilterCounts {
   all: number;
+  offMain: number;
   dirty: number;
   multiWt: number;
   orphans: number;
@@ -89,6 +90,8 @@ export interface RepositoryWorktrees {
   repoName: string;
   associatedAccount?: string | null;
   watchFolderPath?: string | null;
+  defaultBranch?: string | null;
+  localBranches?: BranchStatusEntry[];
   worktrees: WorktreeInfo[];
 }
 
@@ -220,10 +223,16 @@ export interface BranchBatchDeleteSummary {
   errors: BranchBatchItemError[];
 }
 
-export type QuickActionPreset = 'discardUncommitted' | 'nukeWorktrees' | 'cleanBranches' | 'totalFreshStart';
+export type QuickActionPreset =
+  | 'syncDefaultBranch'
+  | 'discardUncommitted'
+  | 'nukeWorktrees'
+  | 'cleanBranches'
+  | 'totalFreshStart';
 
-export type QuickActionScope = 
+export type QuickActionScope =
   | { singleRepo: { repoPath: string } }
+  | { repoList: { repoPaths: string[] } }
   | 'allWatchedRepos';
 
 export interface QuickActionPreview {
@@ -236,6 +245,9 @@ export interface QuickActionPreview {
   unpushedBranchesCount: number;
   totalUnpushedCommits: number;
   protectedDefaultBranches: string[];
+  reposToSwitchToDefault: string[];
+  reposReadyToPull: string[];
+  reposSkippedDirtyOrLocked: string[];
 }
 
 export interface QuickActionResult {
@@ -244,7 +256,13 @@ export interface QuickActionResult {
   worktreesRemoved: number;
   worktreesDiscarded: number;
   branchesDeleted: number;
+  reposFetched: number;
+  reposSwitchedToDefault: number;
+  reposPulled: number;
+  reposUpToDate: number;
+  reposSkipped: number;
   warnings: string[];
   errors: string[];
 }
+
 

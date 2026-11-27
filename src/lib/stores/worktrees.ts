@@ -8,6 +8,24 @@ export const searchFilter = writable<string>('');
 export const isPinned = writable<boolean>(false);
 export const scanError = writable<string | null>(null);
 
+/** Resolves a repository's effective default branch name (`main` fallback when unconfigured). */
+export function getRepoDefaultBranch(repo: RepositoryWorktrees): string {
+  return repo.defaultBranch?.trim() || 'main';
+}
+
+/** Whether a repository's root/main worktree is currently checked out off its default branch. */
+export function isRepoOffDefaultBranch(repo: RepositoryWorktrees): boolean {
+  const mainWt = repo.worktrees.find((wt) => wt.isMain);
+  if (!mainWt) return false;
+  if (!mainWt.branch) return true; // detached HEAD is off the default branch
+  const shortBranch = mainWt.branch.replace('refs/heads/', '');
+  const expected = getRepoDefaultBranch(repo);
+  if (shortBranch === expected) return false;
+  // Treat master as on-default only when defaultBranch was not explicitly resolved
+  if (!repo.defaultBranch && shortBranch === 'master') return false;
+  return true;
+}
+
 /** Whether a worktree matches the search box; `query` must already be lowercased and trimmed. */
 export function worktreeMatchesSearch(
   wt: WorktreeInfo,
@@ -28,9 +46,8 @@ export function worktreeMatchesSearch(
 
 /**
  * The repositories and worktrees the Worktrees view is actually showing. Derived here rather than
- * computed inside `WorktreeList` because the "select all filtered" control has to act on exactly
- * what the list renders — two independent copies of this filter would eventually disagree about
- * what "all" means. Single-pass over the repo list, same as the filter bars' tallies.
+ * computed inside `WorktreeList` because the "select all filtered" control and filtered Quick
+ * Actions scope must act on the exact set rendered on screen.
  */
 export const filteredRepos = derived(
   [scannedRepos, selectedAccountFilter, selectedStatusFilter, searchFilter],
@@ -43,8 +60,11 @@ export const filteredRepos = derived(
           if (repo.associatedAccount?.toLowerCase() !== $account.toLowerCase()) return false;
         }
 
-        // Multi-WT is a repository-level property, so it filters whole repos out.
+        // Repository-level properties filter whole repositories.
         if ($status === 'MULTI_WT' && repo.worktrees.length <= 1) {
+          return false;
+        }
+        if ($status === 'OFF_MAIN' && !isRepoOffDefaultBranch(repo)) {
           return false;
         }
 
@@ -87,11 +107,32 @@ export function toggleRepoCollapsed(repoPath: string): void {
   });
 }
 
-/** While any search or status filter is active, collapsed repos are shown expanded so matches stay visible. */
+export function collapseAllRepos(repoPaths: string[]): void {
+  collapsedRepos.set(new Set(repoPaths));
+}
+
+export function expandAllRepos(): void {
+  collapsedRepos.set(new Set());
+}
+
+/** Whether any search, status, or account filter narrows the Worktrees view. */
+export const hasActiveWorktreeFilters = derived(
+  [searchFilter, selectedStatusFilter, selectedAccountFilter],
+  ([$search, $status, $account]) =>
+    Boolean($search.trim()) || $status !== 'ALL' || $account !== 'ALL'
+);
+
+/** While a search or status filter is active, collapsed repos expand automatically so matches stay visible. */
 export const isFilterActive = derived(
   [searchFilter, selectedStatusFilter],
   ([$search, $status]) => Boolean($search.trim()) || $status !== 'ALL'
 );
+
+export function resetWorktreeFilters(): void {
+  searchFilter.set('');
+  selectedStatusFilter.set('ALL');
+  selectedAccountFilter.set('ALL');
+}
 
 /** Worktrees currently rendered on screen, in display order; the arrow-key navigation walks this list. */
 export const navigableWorktrees = derived(

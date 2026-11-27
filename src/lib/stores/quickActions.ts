@@ -9,7 +9,7 @@ import type {
 import { toErrorMessage } from '../utils/errors';
 
 export const isQuickActionsModalOpen = writable<boolean>(false);
-export const activeQuickActionPreset = writable<QuickActionPreset>('discardUncommitted');
+export const activeQuickActionPreset = writable<QuickActionPreset>('syncDefaultBranch');
 export const quickActionScope = writable<QuickActionScope>('allWatchedRepos');
 export const quickActionPreview = writable<QuickActionPreview | null>(null);
 export const isLoadingQuickActionPreview = writable<boolean>(false);
@@ -18,13 +18,17 @@ export const isExecutingQuickAction = writable<boolean>(false);
 export const quickActionResult = writable<QuickActionResult | null>(null);
 export const quickActionError = writable<string | null>(null);
 
+let previewRequestSeq = 0;
+
 /**
- * Fetches pre-flight impact preview for the selected preset and scope.
+ * Fetches pre-flight impact preview for the selected preset and scope, discarding stale responses
+ * when the user switches preset or scope rapidly.
  */
 export async function fetchQuickActionPreview(
   preset: QuickActionPreset,
   scope: QuickActionScope
 ): Promise<void> {
+  const reqId = ++previewRequestSeq;
   isLoadingQuickActionPreview.set(true);
   quickActionPreviewError.set(null);
 
@@ -33,16 +37,20 @@ export async function fetchQuickActionPreview(
       preset,
       scope
     });
+    if (reqId !== previewRequestSeq) return;
     quickActionPreview.set(preview);
   } catch (err: unknown) {
+    if (reqId !== previewRequestSeq) return;
     quickActionPreviewError.set(toErrorMessage(err, 'Failed to compute action preview'));
   } finally {
-    isLoadingQuickActionPreview.set(false);
+    if (reqId === previewRequestSeq) {
+      isLoadingQuickActionPreview.set(false);
+    }
   }
 }
 
 /**
- * Executes the quick action bulk cleanup pipeline.
+ * Executes the quick action pipeline (constructive sync or bulk cleanup).
  */
 export async function runQuickAction(
   preset: QuickActionPreset,
@@ -68,21 +76,43 @@ export async function runQuickAction(
 }
 
 export function resetQuickActionsState(): void {
+  previewRequestSeq++;
+  isLoadingQuickActionPreview.set(false);
   quickActionPreview.set(null);
   quickActionPreviewError.set(null);
   quickActionResult.set(null);
   quickActionError.set(null);
 }
 
+export interface OpenQuickActionsOptions {
+  repoPath?: string;
+  filteredRepoPaths?: string[];
+  preset?: QuickActionPreset;
+}
+
 /**
- * Opens QuickActionsModal either for all watched repositories or pre-scoped to a single repository.
+ * Opens QuickActionsModal scoped to a single repository, the active filtered repository subset,
+ * or all watched repositories.
  */
-export function openQuickActionsModal(repoPath?: string): void {
+export function openQuickActionsModal(options?: string | OpenQuickActionsOptions): void {
   resetQuickActionsState();
-  if (repoPath) {
-    quickActionScope.set({ singleRepo: { repoPath } });
+
+  const normalized: OpenQuickActionsOptions =
+    typeof options === 'string' ? { repoPath: options } : options ?? {};
+
+  if (normalized.preset) {
+    activeQuickActionPreset.set(normalized.preset);
+  } else {
+    activeQuickActionPreset.set('syncDefaultBranch');
+  }
+
+  if (normalized.repoPath) {
+    quickActionScope.set({ singleRepo: { repoPath: normalized.repoPath } });
+  } else if (normalized.filteredRepoPaths && normalized.filteredRepoPaths.length > 0) {
+    quickActionScope.set({ repoList: { repoPaths: normalized.filteredRepoPaths } });
   } else {
     quickActionScope.set('allWatchedRepos');
   }
+
   isQuickActionsModalOpen.set(true);
 }
